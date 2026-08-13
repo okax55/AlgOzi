@@ -115,10 +115,13 @@ export default function BistAlgoPlatform() {
         if (cloudData.portfolios) {
           let mergedPortfolios = { ...cloudData.portfolios };
           
-          // EĞER BULUTTAKİ PORTFÖYLER BOŞALMIŞSA (HATA SONUCU), BAŞLANGIÇ VERİLERİNİ GERİ YÜKLE
+          // EĞER BULUTTAKİ PORTFÖYLER BOŞALMIŞSA (HATA SONUCU) VEYA BUGÜN YANLIŞLIKLA TARANDIYSA BAŞLANGIÇ VERİLERİNİ (6 AĞUSTOS) GERİ YÜKLE
           const isBistEmpty = Object.values(mergedPortfolios).every(p => !p || p.length === 0);
-          if (isBistEmpty) {
+          const forceRestore = !localStorage.getItem('restore_aug6_portfolios_v2');
+          
+          if (isBistEmpty || forceRestore) {
               mergedPortfolios = INITIAL_PORTFOLIOS;
+              localStorage.setItem('restore_aug6_portfolios_v2', 'true');
           }
 
           let missingLots = false;
@@ -149,12 +152,12 @@ export default function BistAlgoPlatform() {
         }
         if (cloudData.lastScanDate) localStorage.setItem('lastScanDate', cloudData.lastScanDate);
         
-        const forceResetUs = localStorage.getItem('clearUSPortfolios_08_11_v3');
-        if (!forceResetUs) {
+        const forceResetUs = !localStorage.getItem('clearUSPortfolios_08_11_v4');
+        if (forceResetUs) {
            console.log("HARD RESETTING US PORTFOLIOS");
            setUsPortfolios(INITIAL_US_PORTFOLIOS);
            saveToFirebase('usPortfolios', INITIAL_US_PORTFOLIOS);
-           localStorage.setItem('clearUSPortfolios_08_11_v3', 'true');
+           localStorage.setItem('clearUSPortfolios_08_11_v4', 'true');
         } else if (cloudData.usPortfolios && cloudData.usPortfolios.alfa && cloudData.usPortfolios.alfa.length > 0) {
            setUsPortfolios(cloudData.usPortfolios);
         } else {
@@ -630,9 +633,9 @@ export default function BistAlgoPlatform() {
       if (savedMonthBist === null) {
         localStorage.setItem('portfolios_v5', JSON.stringify(initialData));
         localStorage.setItem('rebalanceMonth_BIST', currentMonth.toString());
-        localStorage.setItem('lastScanDate', new Date().toLocaleDateString('tr-TR'));
+        // İlk girişte mevcut ayın portföyü zaten Firebase'den veya INITIAL_PORTFOLIOS'dan geldiği için
+        // sıfırdan yeni bir tarama YAPMAMASI gerekiyor. Sadece fiyatları güncelliyoruz.
         refreshPortfolioPrices(initialData);
-        rebalanceBISTPortfolios(allTickers, initialData);
       } else if (parseInt(savedMonthBist) !== currentMonth && currentHour >= 11 && isBusinessDay) {
         rebalanceBISTPortfolios(allTickers, initialData);
       } else if (savedMonthBist === currentMonth.toString()) {
@@ -642,7 +645,7 @@ export default function BistAlgoPlatform() {
       // ABD Kontrolü (Saat 18:00'ı geçtiyse ve bugün işlem günüyse)
       if (savedMonthUS === null) {
         localStorage.setItem('rebalanceMonth_US', currentMonth.toString());
-        rebalanceUSPortfolios();
+        // Aynı şekilde ABD için de yeni cihaz/tarayıcıdan girildiğinde sıfırdan tarama yapma.
       } else if (parseInt(savedMonthUS) !== currentMonth && currentHour >= 18 && isBusinessDay) {
         rebalanceUSPortfolios();
       }
