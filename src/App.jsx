@@ -160,13 +160,20 @@ export default function BistAlgoPlatform() {
             pastSwingTradesRef.current = cloudData.pastSwingTrades;
         }
         if (cloudData.lastScanDate) localStorage.setItem('lastScanDate', cloudData.lastScanDate);
+        const fixedDateUS = '11 Ağustos 2026';
+        if (cloudData.lastScanDateUS) {
+            localStorage.setItem('lastScanDateUS', cloudData.lastScanDateUS);
+        } else {
+            localStorage.setItem('lastScanDateUS', fixedDateUS);
+            saveToFirebase('lastScanDateUS', fixedDateUS);
+        }
         
-        const forceResetUsFinal = !localStorage.getItem('restore_aug6_us_final_v3');
+        const forceResetUsFinal = !localStorage.getItem('restore_aug6_us_final_v4');
         if (forceResetUsFinal) {
            console.log("HARD RESETTING US PORTFOLIOS");
            setUsPortfolios(INITIAL_US_PORTFOLIOS);
            saveToFirebase('usPortfolios', INITIAL_US_PORTFOLIOS);
-           localStorage.setItem('restore_aug6_us_final_v3', 'true');
+           localStorage.setItem('restore_aug6_us_final_v4', 'true');
         } else if (cloudData.usPortfolios && cloudData.usPortfolios.alfa && cloudData.usPortfolios.alfa.length > 0) {
            setUsPortfolios(cloudData.usPortfolios);
         } else {
@@ -1036,9 +1043,9 @@ export default function BistAlgoPlatform() {
         
         localStorage.setItem('rebalanceMonth_US', new Date().getMonth().toString());
         
-        const dateStr = new Date().toLocaleString('tr-TR', { day: 'numeric', month: 'long' });
-        localStorage.setItem('lastScanDate', dateStr);
-        saveToFirebase('lastScanDate', dateStr);
+        const dateStr = new Date().toLocaleString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+        localStorage.setItem('lastScanDateUS', dateStr);
+        saveToFirebase('lastScanDateUS', dateStr);
 
     } catch(err) {
         console.error("ABD Portföy oluşturulurken hata:", err);
@@ -1344,7 +1351,7 @@ export default function BistAlgoPlatform() {
                   <div className="mt-3 flex flex-wrap items-center gap-4 text-sm font-semibold text-indigo-400">
                     <div className="flex items-center gap-1.5 bg-indigo-500/10 px-2 py-1 rounded-md">
                       <Clock className="w-3.5 h-3.5" />
-                      Son Tarama: {marketMode === 'ABD' ? (new Date().toLocaleDateString('tr-TR')) : (localStorage.getItem('lastScanDate') || '31 Temmuz')}
+                      Son Tarama: {marketMode === 'ABD' ? (localStorage.getItem('lastScanDateUS') || '11 Ağustos 2026') : (localStorage.getItem('lastScanDate') || '06 Ağustos 2026')}
                     </div>
                     <div className="flex items-center gap-1.5 bg-orange-500/10 text-orange-600 dark:text-orange-400 px-2 py-1 rounded-md">
                       <Clock className="w-3.5 h-3.5" />
