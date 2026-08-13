@@ -114,6 +114,13 @@ export default function BistAlgoPlatform() {
       if (cloudData) {
         if (cloudData.portfolios) {
           let mergedPortfolios = { ...cloudData.portfolios };
+          
+          // EĞER BULUTTAKİ PORTFÖYLER BOŞALMIŞSA (HATA SONUCU), BAŞLANGIÇ VERİLERİNİ GERİ YÜKLE
+          const isBistEmpty = Object.values(mergedPortfolios).every(p => !p || p.length === 0);
+          if (isBistEmpty) {
+              mergedPortfolios = INITIAL_PORTFOLIOS;
+          }
+
           let missingLots = false;
           Object.keys(mergedPortfolios).forEach(key => {
             if (mergedPortfolios[key] && Array.isArray(mergedPortfolios[key])) {
@@ -128,7 +135,7 @@ export default function BistAlgoPlatform() {
             }
           });
           setPortfolios(mergedPortfolios);
-          if (missingLots) {
+          if (missingLots || isBistEmpty) {
              saveToFirebase('portfolios', mergedPortfolios);
           }
         }
@@ -955,6 +962,10 @@ export default function BistAlgoPlatform() {
         const universeMap = getUniverseMap(universeList);
         const tvDataMap = await fetchTVDataForStocks(universeMap.alfa); 
 
+        if (!tvDataMap || Object.keys(tvDataMap).length === 0) {
+            throw new Error("TradingView API'den veri alınamadı. Portföyler güncellenemedi. (Vercel IP engeli vb.)");
+        }
+
         const currentP = existingPortfolios || portfolios;
 
         setRebalanceProgress(25);
@@ -994,6 +1005,11 @@ export default function BistAlgoPlatform() {
     try {
         setRebalanceProgress(20);
         const usTvDataMap = await fetchTVDataForUSStocks(US_UNIVERSE_ALL);
+
+        if (!usTvDataMap || Object.keys(usTvDataMap).length === 0) {
+            throw new Error("TradingView API'den veri alınamadı. ABD Portföyleri güncellenemedi.");
+        }
+
         const currentUs = usPortfolios;
         setRebalanceProgress(50);
         const usAlfa = await generateMonthlyUSPortfolio(US_ALFA, 'alfa', currentUs.alfa, usTvDataMap);
