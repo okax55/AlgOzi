@@ -117,11 +117,20 @@ export default function BistAlgoPlatform() {
           
           // EĞER BULUTTAKİ PORTFÖYLER BOŞALMIŞSA (HATA SONUCU) VEYA BUGÜN YANLIŞLIKLA TARANDIYSA BAŞLANGIÇ VERİLERİNİ (6 AĞUSTOS) GERİ YÜKLE
           const isBistEmpty = Object.values(mergedPortfolios).every(p => !p || p.length === 0);
-          const forceRestore = !localStorage.getItem('restore_aug6_portfolios_v2');
+          const forceRestoreFinal = !localStorage.getItem('restore_aug6_final_v3');
           
-          if (isBistEmpty || forceRestore) {
+          if (isBistEmpty || forceRestoreFinal) {
               mergedPortfolios = INITIAL_PORTFOLIOS;
-              localStorage.setItem('restore_aug6_portfolios_v2', 'true');
+              localStorage.setItem('restore_aug6_final_v3', 'true');
+              
+              // Tarihi de zorla 6 Ağustos'a çekelim ve formatlayalım
+              const fixedDate = '06 Ağustos 2026';
+              localStorage.setItem('lastScanDate', fixedDate);
+              saveToFirebase('lastScanDate', fixedDate);
+              if (cloudData) cloudData.lastScanDate = fixedDate;
+              
+              // Veritabanını hemen güncelleyelim ki diğer siteler de (localhost vb.) düzelsin
+              saveToFirebase('portfolios', INITIAL_PORTFOLIOS);
           }
 
           let missingLots = false;
@@ -152,12 +161,12 @@ export default function BistAlgoPlatform() {
         }
         if (cloudData.lastScanDate) localStorage.setItem('lastScanDate', cloudData.lastScanDate);
         
-        const forceResetUs = !localStorage.getItem('clearUSPortfolios_08_11_v4');
-        if (forceResetUs) {
+        const forceResetUsFinal = !localStorage.getItem('restore_aug6_us_final_v3');
+        if (forceResetUsFinal) {
            console.log("HARD RESETTING US PORTFOLIOS");
            setUsPortfolios(INITIAL_US_PORTFOLIOS);
            saveToFirebase('usPortfolios', INITIAL_US_PORTFOLIOS);
-           localStorage.setItem('clearUSPortfolios_08_11_v4', 'true');
+           localStorage.setItem('restore_aug6_us_final_v3', 'true');
         } else if (cloudData.usPortfolios && cloudData.usPortfolios.alfa && cloudData.usPortfolios.alfa.length > 0) {
            setUsPortfolios(cloudData.usPortfolios);
         } else {
