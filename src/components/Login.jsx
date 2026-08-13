@@ -46,9 +46,9 @@ export default function Login({ onLogin }) {
         {/* Header */}
         <div className="p-8 text-center bg-gray-50/50 dark:bg-gray-950/50 border-b border-gray-100 dark:border-gray-800">
           <div className="mx-auto w-16 h-16 rounded-2xl shadow-[0_0_20px_rgba(99,102,241,0.4)] overflow-hidden bg-gray-900 border border-gray-200 dark:border-gray-800 flex items-center justify-center mb-4">
-             <img src="/logo.png" alt="Ozi Algo Logo" className="w-full h-full object-cover" />
+             <img src="/logo.png" alt="AlgOzi Logo" className="w-full h-full object-cover" />
           </div>
-          <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-500 to-cyan-400 bg-clip-text text-transparent">Ozi Algo Trade</h1>
+          <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-500 to-cyan-400 bg-clip-text text-transparent">AlgOzi Trade</h1>
           <p className="text-sm text-gray-500 font-medium mt-1">Yapay Zeka Destekli Portföy Yönetimi</p>
         </div>
 

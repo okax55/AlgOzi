@@ -19,12 +19,12 @@ import { saveToFirebase, loadFromFirebase } from './services/firebase';
 
 const safeFloat = (val, fieldName = 'Veri') => {
     if (val === undefined || val === null || val === '') {
-        console.error(`[Ozi Algo Uyarı]: ${fieldName} eksik veya boş! Sıfır kabul edilerek hesaplamaya devam ediliyor. (Gelen Değer: ${val})`);
+        console.error(`[AlgOzi Uyarı]: ${fieldName} eksik veya boş! Sıfır kabul edilerek hesaplamaya devam ediliyor. (Gelen Değer: ${val})`);
         return 0;
     }
     const num = parseFloat(val);
     if (isNaN(num)) {
-        console.error(`[Ozi Algo Uyarı]: ${fieldName} geçerli bir sayı değil! Sıfır kabul edilerek hesaplamaya devam ediliyor. (Gelen Değer: '${val}')`);
+        console.error(`[AlgOzi Uyarı]: ${fieldName} geçerli bir sayı değil! Sıfır kabul edilerek hesaplamaya devam ediliyor. (Gelen Değer: '${val}')`);
         return 0;
     }
     return num;
@@ -1138,11 +1138,11 @@ export default function BistAlgoPlatform() {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col items-center justify-center text-indigo-500">
         <div className="w-20 h-20 mb-6 rounded-2xl shadow-[0_0_30px_rgba(99,102,241,0.4)] overflow-hidden bg-gray-900 border border-gray-800 flex items-center justify-center animate-pulse">
-           <img src="/logo.png" alt="Ozi Algo Logo" className="w-full h-full object-cover" />
+           <img src="/logo.png" alt="AlgOzi Logo" className="w-full h-full object-cover" />
         </div>
         <Loader2 className="w-12 h-12 animate-spin mb-4" />
         <h2 className="text-xl font-bold text-gray-900 dark:text-white">Veriler Analiz Ediliyor...</h2>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">Ozi Algo Trade Yapay Zeka Motoru Çalışıyor</p>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">AlgOzi Trade Yapay Zeka Motoru Çalışıyor</p>
       </div>
     );
   }
@@ -1161,10 +1161,10 @@ export default function BistAlgoPlatform() {
             <div 
               onClick={() => setActiveTab('portfolios')}
               className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl shadow-[0_0_15px_rgba(99,102,241,0.3)] overflow-hidden bg-gray-900 border border-gray-200 dark:border-gray-800 flex items-center justify-center shrink-0 cursor-pointer hover:scale-105 transition-transform">
-               <img src="/logo.png" alt="Ozi Algo Logo" className="w-full h-full object-cover" />
+               <img src="/logo.png" alt="AlgOzi Logo" className="w-full h-full object-cover" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-black bg-gradient-to-r from-indigo-500 to-cyan-400 bg-clip-text text-transparent">Ozi Algo Trade</h1>
+              <h1 className="text-xl sm:text-2xl font-black bg-gradient-to-r from-indigo-500 to-cyan-400 bg-clip-text text-transparent">AlgOzi Trade</h1>
               <p className="hidden sm:block text-xs text-gray-500 dark:text-gray-400 font-bold tracking-wide">YAPAY ZEKA DESTEKLİ CANLI PORTFÖY & SİNYAL YÖNETİMİ</p>
             </div>
           </div>

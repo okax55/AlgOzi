@@ -341,7 +341,7 @@ const BacktestDashboard = () => {
             <div>
                 <h4 className="font-bold text-indigo-400 mb-2">Simülatör Hakkında</h4>
                 <p className="text-gray-400 text-sm leading-relaxed">
-                    Bu modül, Ozi Algo Trade stratejilerinin matematiksel risk, getiri ve volatilite profillerini kullanarak, 
+                    Bu modül, AlgOzi Trade stratejilerinin matematiksel risk, getiri ve volatilite profillerini kullanarak, 
                     seçilen zaman dilimindeki BIST100 (XU100) piyasa koşullarına göre <b>Monte Carlo Simülasyonu</b> uygular. 
                     Gerçek geçmiş fiyat verisi (600 hissenin günlük mumları) çok büyük olduğu için, sonuçlar stratejilerin istatistiksel 
                     beklentilerini yansıtacak şekilde sentezlenmiştir. Bu size hangi stratejinin krizlerde (Drawdown) nasıl tepki vereceğini 
