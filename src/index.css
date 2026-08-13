@@ -1,0 +1,50 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  user-select: none; /* Metin kopyalanmasını/seçilmesini engeller */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  cursor: default; /* Yazı imleci (I-beam) çıkmasını engeller */
+}
+
+/* Recharts grafiklerine tıklanınca çıkan çizgili çerçeveyi (outline) gizler */
+.recharts-wrapper,
+.recharts-surface,
+.recharts-responsive-container,
+.recharts-layer,
+.recharts-active-dot,
+.recharts-dot,
+.recharts-symbols,
+circle {
+  outline: none !important;
+}
+
+/* Karanlık modda sütun üstündeki LabelList yüzdelerini zorla beyaz yapar */
+.dark .recharts-label-list text {
+  fill: #ffffff !important;
+}
+
+/* Sadece input veya textarea alanlarında kopyalamaya/yazmaya izin ver */
+input, textarea {
+  user-select: auto;
+  -webkit-user-select: auto;
+  cursor: text;
+}

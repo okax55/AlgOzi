@@ -1,0 +1,3 @@
+/api/tradingview/*  https://scanner.tradingview.com/:splat  200
+/api/yahoo/*        https://query2.finance.yahoo.com/:splat  200
+/*                  /index.html                             200
