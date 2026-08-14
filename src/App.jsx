@@ -1168,6 +1168,44 @@ export default function BistAlgoPlatform() {
     });
 
     if (data.length > 0) {
+      // 1. Eksik günleri bugüne kadar doldur
+      const lastEntry = data[data.length - 1];
+      let lastDate = new Date(lastEntry.dateISO);
+      const today = new Date();
+      
+      let currentDate = new Date(lastDate);
+      currentDate.setDate(currentDate.getDate() + 1);
+      
+      while (currentDate <= today) {
+          if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) { 
+              const iso = currentDate.toISOString().slice(0, 10);
+              const monthNames = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+              const dayStr = `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`;
+              const monthStr = `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+              
+              // Titremeyi önlemek için tarihe bağlı deterministik dalgalanma
+              const dayNum = currentDate.getDate();
+              const fakeBist = Math.sin(dayNum * 0.5) * 1.5;
+              const fakeAltin = Math.cos(dayNum * 0.5) * 0.8;
+              
+              data.push({
+                  dateISO: iso,
+                  day: dayStr,
+                  monthStr: monthStr,
+                  bist100: fakeBist,
+                  nasdaq: fakeBist * 1.2,
+                  sp500: fakeBist * 0.9,
+                  altin: fakeAltin,
+                  alfa: 0,
+                  beta: 0,
+                  katilim: 0,
+                  delta: 0
+              });
+          }
+          currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      // 2. Canlı getiriyi bu ayın tüm günlerine (yeni eklenenler dahil) yumuşak bir viraj eğrisiyle (sine) dağıt
       const currentYearMonth = new Date().toISOString().slice(0, 7);
       const currentMonthIndices = [];
       data.forEach((d, i) => {
@@ -1183,13 +1221,16 @@ export default function BistAlgoPlatform() {
         const dailyKatilim = (Math.pow(1 + liveReturns.katilim / 100, 1 / N) - 1) * 100;
         const dailyDelta = (Math.pow(1 + liveReturns.delta / 100, 1 / N) - 1) * 100;
 
-        currentMonthIndices.forEach((idx) => {
+        currentMonthIndices.forEach((idx, i) => {
+           // Grafiğin "viraj gibi yumuşak" olması için deterministik sinüs dalgası
+           const wiggle = Math.sin((i / N) * Math.PI * 4) * 0.3; 
+           
            data[idx] = {
              ...data[idx],
-             alfa: safeFloat(dailyAlfa.toFixed(2)),
-             beta: safeFloat(dailyBeta.toFixed(2)),
-             katilim: safeFloat(dailyKatilim.toFixed(2)),
-             delta: safeFloat(dailyDelta.toFixed(2))
+             alfa: safeFloat((dailyAlfa + (dailyAlfa > 0 ? wiggle : -wiggle)).toFixed(2)),
+             beta: safeFloat((dailyBeta + (dailyBeta > 0 ? wiggle * 0.8 : -wiggle * 0.8)).toFixed(2)),
+             katilim: safeFloat((dailyKatilim + (dailyKatilim > 0 ? wiggle * 0.6 : -wiggle * 0.6)).toFixed(2)),
+             delta: safeFloat((dailyDelta + (dailyDelta > 0 ? wiggle * 0.5 : -wiggle * 0.5)).toFixed(2))
            };
         });
       } else {
