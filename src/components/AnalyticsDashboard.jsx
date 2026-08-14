@@ -23,7 +23,7 @@ const COLORS = {
   altin: '#eab308' // yellow-500
 };
 
-export default function AnalyticsDashboard({ historicalData, dailyData }) {
+export default function AnalyticsDashboard({ historicalData, dailyData, marketMode }) {
   const [timeRange, setTimeRange] = useState('YTD');
   const [selectedMonthData, setSelectedMonthData] = useState(null);
   const [benchmarks, setBenchmarks] = useState(globalBenchmarks);
@@ -160,27 +160,30 @@ export default function AnalyticsDashboard({ historicalData, dailyData }) {
   const bestPortfolio = useMemo(() => {
       if(chartData.length === 0) return null;
       const last = chartData[chartData.length - 1];
-      const ports = [
+      let ports = [
           { name: 'ALFA', val: parseFloat(last.cumAlfa), color: COLORS.alfa },
           { name: 'BETA', val: parseFloat(last.cumBeta), color: COLORS.beta },
           { name: 'KATILIM', val: parseFloat(last.cumKatilim), color: COLORS.katilim },
           { name: 'DELTA', val: parseFloat(last.cumDelta), color: COLORS.delta }
       ];
+      if (marketMode === 'ABD') {
+          ports = ports.filter(p => p.name !== 'KATILIM');
+      }
       ports.sort((a,b) => b.val - a.val);
       return ports[0];
-  }, [chartData]);
+  }, [chartData, marketMode]);
 
   const indexBeaters = useMemo(() => {
       if(chartData.length === 0) return 0;
       const last = chartData[chartData.length - 1];
-      const bist = parseFloat(last.cumBist100);
+      const benchmark = marketMode === 'ABD' ? parseFloat(last.cumNasdaq) : parseFloat(last.cumBist100);
       let count = 0;
-      if (parseFloat(last.cumAlfa) > bist) count++;
-      if (parseFloat(last.cumBeta) > bist) count++;
-      if (parseFloat(last.cumKatilim) > bist) count++;
-      if (parseFloat(last.cumDelta) > bist) count++;
+      if (parseFloat(last.cumAlfa) > benchmark) count++;
+      if (parseFloat(last.cumBeta) > benchmark) count++;
+      if (marketMode !== 'ABD' && parseFloat(last.cumKatilim) > benchmark) count++;
+      if (parseFloat(last.cumDelta) > benchmark) count++;
       return count;
-  }, [chartData]);
+  }, [chartData, marketMode]);
 
 
   const CustomTooltip = ({ active, payload, label, suffix = '%' }) => {
@@ -307,7 +310,7 @@ export default function AnalyticsDashboard({ historicalData, dailyData }) {
               {/* Portfolios */}
               <Line isAnimationActive={false} type="monotone" dataKey="cumAlfa" name="ALFA" stroke={COLORS.alfa} strokeWidth={3} dot={{ r: 4, fill: COLORS.alfa }} activeDot={{ r: 6 }} />
               <Line isAnimationActive={false} type="monotone" dataKey="cumBeta" name="BETA" stroke={COLORS.beta} strokeWidth={3} dot={{ r: 4, fill: COLORS.beta }} activeDot={{ r: 6 }} />
-              <Line isAnimationActive={false} type="monotone" dataKey="cumKatilim" name="KATILIM" stroke={COLORS.katilim} strokeWidth={3} dot={{ r: 4, fill: COLORS.katilim }} activeDot={{ r: 6 }} />
+              {marketMode !== 'ABD' && <Line isAnimationActive={false} type="monotone" dataKey="cumKatilim" name="KATILIM" stroke={COLORS.katilim} strokeWidth={3} dot={{ r: 4, fill: COLORS.katilim }} activeDot={{ r: 6 }} />}
               <Line isAnimationActive={false} type="monotone" dataKey="cumDelta" name="DELTA" stroke={COLORS.delta} strokeWidth={3} dot={{ r: 4, fill: COLORS.delta }} activeDot={{ r: 6 }} />
               
               {/* Benchmarks (Dashed) */}
@@ -342,7 +345,7 @@ export default function AnalyticsDashboard({ historicalData, dailyData }) {
                                 <ReferenceLine y={0} stroke="#4B5563" strokeWidth={0.5} strokeOpacity={0.5} />
                 <Line isAnimationActive={false} type="monotone" dataKey="dAlfa" name="ALFA" stroke={COLORS.alfa} strokeWidth={2} dot={false} />
                 <Line isAnimationActive={false} type="monotone" dataKey="dBeta" name="BETA" stroke={COLORS.beta} strokeWidth={2} dot={false} />
-                <Line isAnimationActive={false} type="monotone" dataKey="dKatilim" name="KATILIM" stroke={COLORS.katilim} strokeWidth={2} dot={false} />
+                {marketMode !== 'ABD' && <Line isAnimationActive={false} type="monotone" dataKey="dKatilim" name="KATILIM" stroke={COLORS.katilim} strokeWidth={2} dot={false} />}
                 <Line isAnimationActive={false} type="monotone" dataKey="dDelta" name="DELTA" stroke={COLORS.delta} strokeWidth={2} dot={false} />
                 
                 {benchmarks.bist100 && <Line isAnimationActive={false} type="monotone" dataKey="dBist100" name="BIST 100" stroke={COLORS.bist100} strokeWidth={2} strokeDasharray="3 3" dot={false} />}
@@ -426,7 +429,7 @@ export default function AnalyticsDashboard({ historicalData, dailyData }) {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-            {['alfa', 'beta', 'katilim', 'delta'].map(key => {
+            {['alfa', 'beta', 'katilim', 'delta'].filter(k => marketMode !== 'ABD' || k !== 'katilim').map(key => {
               const stocks = selectedMonthData.details[key];
               const monthReturn = selectedMonthData[key];
               if (!stocks) return null;

@@ -5,7 +5,7 @@ import {
   TrendingUp, BarChart2, Zap, Shield, ShieldAlert, Sparkles, Target, Wallet, LogOut, FileText, Rocket, ArrowUp
 } from 'lucide-react';
 import { INITIAL_PORTFOLIOS, INITIAL_US_PORTFOLIOS } from './data/initialPortfolios';
-import { analyzeStock, scoreStock, fetchAllBistTickers, fetchTVDataForStocks, fetchTVDataForUSStocks, analyzeUSStock, scoreUSStock } from './services/marketData';
+import { analyzeStock, scoreStock, fetchAllBistTickers, fetchTVDataForStocks, fetchTVDataForUSStocks, fetchExplosiveUSStocks, analyzeUSStock, scoreUSStock } from './services/marketData';
 import { BIST100, KATILIM_TUM, YENI_HALKA_ARZ } from './data/bistUniverse';
 import { US_UNIVERSE_ALL, US_ALFA, US_BETA, US_DELTA, US_KATILIM } from './data/usUniverse';
 import { MOCK_MONTHLY_HISTORY, MOCK_DAILY_HISTORY } from './data/mockHistory';
@@ -15,6 +15,7 @@ import FundsDashboard from './components/FundsDashboard';
 import ETFDashboard from './components/ETFDashboard';
 import BalanceSheetDashboard from './components/BalanceSheetDashboard';
 import IpoDashboard from './components/IpoDashboard';
+import MomentumSwingTradeDashboard from './components/MomentumSwingTradeDashboard';
 import { saveToFirebase, loadFromFirebase } from './services/firebase';
 
 const safeFloat = (val, fieldName = 'Veri') => {
@@ -318,48 +319,60 @@ export default function BistAlgoPlatform() {
           const atr = parseFloat(trade.atr) || (currentP * 0.03);
           const entryP = parseFloat(trade.entry);
           
-          // Dinamik hedef ve max-stop güncellemesi (Eski işlemlere de yeni kuralı uygulamak için)
-          trade.target = (entryP + (atr * 3.5)).toFixed(2);
-          const targetP = parseFloat(trade.target);
+          // Momentum Sıkı İzleyen Stop: Sınırsız Kâr (Kârı Koru), %3 Başlangıç Stopu
+          if (!trade.highestPrice || currentP > parseFloat(trade.highestPrice)) {
+              trade.highestPrice = currentP.toFixed(2);
+          }
+          const highestP = parseFloat(trade.highestPrice);
+          const profitPct = ((highestP - entryP) / entryP) * 100;
           
-          if (parseFloat(trade.stop) < entryP * (1 - 0.07)) {
-              trade.stop = (entryP * (1 - 0.07)).toFixed(2);
+          let trailingDistance;
+          if (profitPct >= 2.0) {
+              // Hisse %2'den fazla kâr gördüyse çok sıkı takip et (zirveden %1.5 aşağı)
+              trailingDistance = highestP * 0.015;
+          } else {
+              // Harekete yeni başladıysa standart %3 stop
+              trailingDistance = highestP * 0.03;
+          }
+          
+          const newStop = highestP - trailingDistance;
+          if (!trade.stop || newStop > parseFloat(trade.stop)) {
+              trade.stop = newStop.toFixed(2);
           }
           const stopP = parseFloat(trade.stop);
-          const profitPct = ((currentP - entryP) / entryP) * 100;
           
-          let trailingDistance = atr * 2.0;
-          if (profitPct >= 4.0 && profitPct < 7.0) {
-              // Breakeven (Kârı koruma)
-              if (stopP < entryP) trade.stop = entryP.toFixed(2);
-              trailingDistance = atr * 1.5;
-          } else if (profitPct >= 7.0) {
-              // Kârı kilitleme (Profit Lock)
-              trailingDistance = atr * 1.0;
+          // Sabit hedefi kaldır, hisse gittiği yere kadar gitsin ama arayüz için sembolik %100 göster
+          trade.target = (entryP * 2.0).toFixed(2);
+          
+          // Zaman Stopu Kontrolü (5 İş Günü ~ 7 Takvim Günü)
+          let isTimeStop = false;
+          if (trade.entryDate) {
+              const entryDate = new Date(trade.entryDate).getTime();
+              const now = new Date().getTime();
+              const diffDays = (now - entryDate) / (1000 * 60 * 60 * 24);
+              if (diffDays >= 7) {
+                  isTimeStop = true;
+              }
           }
           
-          const newTrailingStop = currentP - trailingDistance;
-          if (newTrailingStop > parseFloat(trade.stop)) {
-              trade.stop = newTrailingStop.toFixed(2);
-          }
-          
-          // Check exits
-          if (currentP >= targetP) {
-             trade.exitReason = 'Hedef (Kâr Al)';
+          // Check exits (Sadece Stop veya Zaman Stopu ile çıkılır)
+          if (currentP <= stopP) {
+             const actualProfitPct = ((currentP - entryP) / entryP) * 100;
+             trade.exitReason = actualProfitPct > 0 ? 'İzleyen Stop (Kâr)' : 'Stop (Zarar Kes)';
              trade.exitPrice = currentP.toFixed(2);
-             trade.pnlPercent = (((currentP - parseFloat(trade.entry)) / parseFloat(trade.entry)) * 100).toFixed(2);
-             trade.status = 'WIN';
+             trade.pnlPercent = actualProfitPct.toFixed(2);
+             trade.status = actualProfitPct > 0 ? 'WIN' : 'LOSS';
              trade.exitTime = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
              trade.exitDate = new Date().toISOString(); // For cooldown
              historyEvents.push(trade);
              updatedActiveTrades.splice(i, 1);
-          } else if (currentP <= parseFloat(trade.stop)) {
-             trade.exitReason = 'Stop (Zarar Kes)';
+          } else if (isTimeStop) {
+             trade.exitReason = 'Süre Sonu (Zaman Stopu)';
              trade.exitPrice = currentP.toFixed(2);
              trade.pnlPercent = (((currentP - parseFloat(trade.entry)) / parseFloat(trade.entry)) * 100).toFixed(2);
-             trade.status = 'LOSS';
+             trade.status = parseFloat(trade.pnlPercent) > 0 ? 'WIN' : 'LOSS';
              trade.exitTime = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-             trade.exitDate = new Date().toISOString(); // For cooldown
+             trade.exitDate = new Date().toISOString(); 
              historyEvents.push(trade);
              updatedActiveTrades.splice(i, 1);
           }
@@ -454,37 +467,52 @@ export default function BistAlgoPlatform() {
   }, [isScanning]);
 
   const scanUSMarket = useCallback(async (currentUniverse, isOnlyActive = false) => {
-    if (isScanning || currentUniverse.length === 0) return;
+    if (isScanning) return;
     
     // US Market Hours Check
     const now = new Date();
     const day = now.getDay();
     const time = now.getHours() + (now.getMinutes() / 60);
-    const isOpen = (day > 0 && day < 6) && (time >= 16.5 && time <= 23.0); // 16:30 - 23:00 TR
+    const isActuallyOpen = (day > 0 && day < 6) && (time >= 16.5 && time <= 23.0); // 16:30 - 23:00 TR
+    const currentActive = Array.isArray(activeUsSwingTradesRef.current) ? activeUsSwingTradesRef.current : [];
+    
+    // Eğer hiç işlem yoksa (sistem ilk açıldığında veya sepet boşaldığında)
+    // piyasa kapalı olsa bile geçmiş verilere dayanarak en az 1 kez tarama yapsın ve hisseleri bulsun.
+    const isOpen = isActuallyOpen || (currentActive.length === 0 && !isOnlyActive);
 
     if (!isOpen) {
-      // Don't stop BIST from scanning if US is closed, just return for US
       return;
     }
 
     try {
-      const safeUniverse = Array.isArray(currentUniverse) ? currentUniverse : [];
-      const currentActive = Array.isArray(activeUsSwingTradesRef.current) ? activeUsSwingTradesRef.current : [];
       const isCapacityFull = currentActive.length >= 5;
       
-      let subset = [];
+      let tvDataMap = {};
+      const activeTickers = currentActive.map(t => t.ticker);
+      
+      // 1. Önce aktif hisselerin güncel verilerini çek
+      if (activeTickers.length > 0) {
+         const activeData = await fetchTVDataForUSStocks(activeTickers);
+         if (activeData) {
+             Object.assign(tvDataMap, activeData);
+         }
+      }
+
+      // 2. Eğer kapasite dolu değilse patlayıcı hisseleri tara (dinamik)
+      let newSubset = [];
       if (!isOnlyActive && !isCapacityFull) {
-          const now = Date.now();
-          if (now - (lastFullScanTimeRef.current || 0) > 5 * 60 * 1000) {
-              subset = [...safeUniverse];
+          const nowMs = Date.now();
+          if (!window._lastUsExplosiveScan || nowMs - window._lastUsExplosiveScan > 5 * 60 * 1000) {
+              window._lastUsExplosiveScan = nowMs;
+              const explosiveData = await fetchExplosiveUSStocks();
+              if (explosiveData) {
+                  Object.assign(tvDataMap, explosiveData);
+                  newSubset = Object.keys(explosiveData);
+              }
           }
       }
       
-      const activeTickers = currentActive.map(t => t.ticker);
-      const tickersToFetch = [...new Set([...subset, ...activeTickers])];
-      if (tickersToFetch.length === 0) return;
-
-      const tvDataMap = (await fetchTVDataForUSStocks(tickersToFetch)) || {};
+      if (Object.keys(tvDataMap).length === 0) return;
       
       let historyEventsUS = [];
       let updatedActiveTrades = [...currentActive];
@@ -501,43 +529,53 @@ export default function BistAlgoPlatform() {
           const atr = parseFloat(trade.atr) || (currentP * 0.04);
           const entryP = parseFloat(trade.entry);
 
-          // Dinamik hedef ve max-stop güncellemesi (Eski işlemlere de yeni kuralı uygulamak için)
-          trade.target = (entryP + (atr * 6)).toFixed(2);
-          const targetP = parseFloat(trade.target);
-
-          if (parseFloat(trade.stop) < entryP * (1 - 0.08)) {
-              trade.stop = (entryP * (1 - 0.08)).toFixed(2);
+          // Momentum Sıkı İzleyen Stop: Sınırsız Kâr (Kârı Koru), %3 Başlangıç Stopu
+          if (!trade.highestPrice || currentP > parseFloat(trade.highestPrice)) {
+              trade.highestPrice = currentP.toFixed(2);
+          }
+          const highestP = parseFloat(trade.highestPrice);
+          const profitPct = ((highestP - entryP) / entryP) * 100;
+          
+          let trailingDistance;
+          if (profitPct >= 2.0) {
+              trailingDistance = highestP * 0.015;
+          } else {
+              trailingDistance = highestP * 0.03;
+          }
+          
+          const newStop = highestP - trailingDistance;
+          if (!trade.stop || newStop > parseFloat(trade.stop)) {
+              trade.stop = newStop.toFixed(2);
           }
           const stopP = parseFloat(trade.stop);
-          const profitPct = ((currentP - entryP) / entryP) * 100;
           
-          let trailingDistance = atr * 4.0;
-          if (profitPct >= 5.0 && profitPct < 10.0) {
-              if (stopP < entryP) trade.stop = entryP.toFixed(2);
-              trailingDistance = atr * 2.5;
-          } else if (profitPct >= 10.0) {
-              trailingDistance = atr * 1.5;
+          trade.target = (entryP * 2.0).toFixed(2);
+          
+          let isTimeStop = false;
+          if (trade.entryDate) {
+              const entryDate = new Date(trade.entryDate).getTime();
+              const nowTime = new Date().getTime();
+              const diffDays = (nowTime - entryDate) / (1000 * 60 * 60 * 24);
+              if (diffDays >= 7) {
+                  isTimeStop = true;
+              }
           }
           
-          const newTrailingStop = currentP - trailingDistance;
-          if (newTrailingStop > stopP) {
-              trade.stop = newTrailingStop.toFixed(2);
-          }
-          
-          if (currentP >= targetP) {
-             trade.exitReason = 'Hedef (Kâr Al)';
+          if (currentP <= stopP) {
+             const actualProfitPct = ((currentP - entryP) / entryP) * 100;
+             trade.exitReason = actualProfitPct > 0 ? 'İzleyen Stop (Kâr)' : 'Stop (Zarar Kes)';
              trade.exitPrice = currentP.toFixed(2);
-             trade.pnlPercent = (((currentP - parseFloat(trade.entry)) / parseFloat(trade.entry)) * 100).toFixed(2);
-             trade.status = 'WIN';
+             trade.pnlPercent = actualProfitPct.toFixed(2);
+             trade.status = actualProfitPct > 0 ? 'WIN' : 'LOSS';
              trade.exitTime = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
              trade.exitDate = new Date().toISOString();
              historyEventsUS.push(trade);
              updatedActiveTrades.splice(i, 1);
-          } else if (currentP <= parseFloat(trade.stop)) {
-             trade.exitReason = 'Stop (Zarar Kes)';
+          } else if (isTimeStop) {
+             trade.exitReason = 'Süre Sonu (Zaman Stopu)';
              trade.exitPrice = currentP.toFixed(2);
              trade.pnlPercent = (((currentP - parseFloat(trade.entry)) / parseFloat(trade.entry)) * 100).toFixed(2);
-             trade.status = 'LOSS';
+             trade.status = parseFloat(trade.pnlPercent) > 0 ? 'WIN' : 'LOSS';
              trade.exitTime = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
              trade.exitDate = new Date().toISOString();
              historyEventsUS.push(trade);
@@ -556,9 +594,9 @@ export default function BistAlgoPlatform() {
       }
 
       // 2. Process New Signals and Auto-Buy
-      if (subset.length > 0) {
+      if (newSubset.length > 0) {
           const newSignals = [];
-          for (const ticker of subset) {
+          for (const ticker of newSubset) {
             const data = tvDataMap[ticker];
             if (data) {
               const signal = analyzeUSStock(data);
@@ -589,19 +627,8 @@ export default function BistAlgoPlatform() {
                               ...signal,
                               currentPrice: signal.entry,
                               entryTime: nowObj.toLocaleDateString('tr-TR') + ' ' + nowObj.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                              entryDate: nowObj.toISOString()
-                          });
-                          historyEventsUS.push({
-                              ticker: signal.ticker,
-                              status: 'BOUGHT',
-                              exitReason: 'İşlem Görüyor',
-                              entry: signal.entry,
-                              exitPrice: signal.entry,
-                              pnlPercent: '0.00',
-                              entryTime: nowObj.toLocaleDateString('tr-TR') + ' ' + nowObj.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                               entryDate: nowObj.toISOString(),
-                              exitTime: nowObj.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                              exitDate: nowObj.toISOString()
+                              highestPrice: signal.entry
                           });
                       }
                   }
@@ -1461,253 +1488,29 @@ export default function BistAlgoPlatform() {
             </div>
           )}
 
-          {activeTab === 'scanner' && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-5 rounded-xl relative overflow-hidden">
-                {isScanning && (
-                  <div className="absolute top-0 left-0 w-full h-[3px] bg-gray-100 dark:bg-gray-800/50 overflow-hidden z-10">
-                     <div className="h-full bg-gradient-to-r from-transparent via-emerald-500 to-transparent w-1/2 animate-radar-scan drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
-                  </div>
-                )}
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-emerald-500" />
-                    Swing Trade Fırsatları
-                  </h2>
-                  <p className="text-base text-gray-800 dark:text-gray-400 mt-1">
-                    {marketMode === 'BIST' 
-                      ? 'BIST evrenindeki hisseler GERÇEK PİYASA VERİLERİ (15dk gecikmeli) ile sürekli taranır. İndikatör kırılımları ve mum formasyonları analiz edilerek listelenir.'
-                      : 'ABD (Nasdaq/NYSE) evrenindeki hisseler GERÇEK PİYASA VERİLERİ (15dk gecikmeli) ile sürekli taranır. İndikatör kırılımları ve mum formasyonları analiz edilerek listelenir.'}
-                  </p>
-                </div>
-                <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
-                  {isScanning && (
-                    <div className="flex items-center gap-2.5 px-4 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-full shadow-[0_0_15px_rgba(16,185,129,0.15)] relative overflow-hidden">
-                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-ring z-10"></div>
-                      <span className="text-xs font-black text-emerald-500 tracking-widest uppercase z-10">Yapay Zeka Taraması</span>
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-emerald-500/10 to-transparent w-full animate-radar-scan"></div>
-                    </div>
-                  )}
-                  {lastUpdate && lastUpdate.includes('Piyasa Kapalı') ? (
-                    <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl border border-rose-500/50 bg-rose-500/10 text-rose-500 shadow-sm">
-                      <AlertCircle className="w-5 h-5 animate-pulse" />
-                      <span className="text-base font-bold">Piyasa Kapalı (Tarama Beklemede)</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-base bg-gray-50 dark:bg-gray-950 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-800">
-                      <Clock className="w-4 h-4 text-gray-800 dark:text-gray-400" />
-                      <span className="text-gray-800 dark:text-gray-400 dark:text-gray-400">Son Sinyal:</span>
-                      <span className="text-gray-900 dark:text-white font-mono font-medium">{lastUpdate || 'Bekleniyor...'}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
+          {activeTab === 'scanner' && (() => {
+              // US piyasası kapalıysa lastUpdate'i eziyoruz
+              const now = new Date();
+              const day = now.getDay();
+              const time = now.getHours() + (now.getMinutes() / 60);
+              const isUsOpen = (day > 0 && day < 6) && (time >= 16.5 && time <= 23.0);
+              const displayLastUpdate = marketMode === 'ABD' && !isUsOpen 
+                  ? 'ABD Piyasası Kapalı (Tarama Durduruldu)' 
+                  : lastUpdate;
 
-              <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden shadow-2xl">
-                <div className="p-5 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-950/50">
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-emerald-500" />
-                    Aktif Swing İşlemleri <span className="text-sm font-medium text-gray-500">({currentActiveSwingTrades.length}/5)</span>
-                  </h3>
-                  <div className="flex items-center gap-3">
-                    {isScanning && (
-                      <span className="text-xs text-emerald-500 animate-pulse flex items-center gap-1 font-bold">
-                        <Loader2 className="w-3 h-3 animate-spin"/> Taranıyor...
-                      </span>
-                    )}
-                    {lastUpdate && lastUpdate.includes('Piyasa Kapalı') ? (
-                       <div className="flex items-center gap-2 px-3 py-1 bg-gray-800/80 border border-gray-700/50 rounded-full shadow-inner">
-                         <div className="w-1.5 h-1.5 rounded-full bg-gray-400"></div>
-                         <span className="text-xs font-bold text-gray-400 tracking-wider">VERİ AKIŞI DURDURULDU</span>
-                       </div>
-                    ) : (
-                       <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg shadow-[0_0_10px_rgba(16,185,129,0.1)]">
-                         <div className="relative flex h-2 w-2">
-                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                           <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                         </div>
-                         <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 tracking-wide uppercase">Canlı Veri</span>
-                       </div>
-                    )}
-                  </div>
-                </div>
-                <div className="overflow-x-auto w-full">
-                  <table className="w-full min-w-[800px] text-base text-left">
-                    <thead className="text-sm text-gray-800 dark:text-gray-400 bg-gray-100 dark:bg-gray-950/50 uppercase border-b border-gray-200 dark:border-gray-800">
-                      <tr>
-                        <th className="px-6 py-4 font-semibold">Sembol</th>
-                        <th className="px-6 py-4 font-semibold">Giriş Fiyatı</th>
-                        <th className="px-6 py-4 font-semibold">Anlık Fiyat</th>
-                        <th className="px-6 py-4 font-semibold text-rose-600 dark:text-rose-500">Stop (İzleyen)</th>
-                        <th className="px-6 py-4 font-semibold text-emerald-600 dark:text-emerald-500">Hedef</th>
-                        <th className="px-6 py-4 font-semibold text-right">Kâr/Zarar</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-800">
-                      {currentActiveSwingTrades.length > 0 ? (
-                        currentActiveSwingTrades.map((trade, i) => {
-                          const pnl = (((parseFloat(trade.currentPrice) - parseFloat(trade.entry)) / parseFloat(trade.entry)) * 100).toFixed(2);
-                          return (
-                            <tr key={i} className="hover:bg-gray-100/40 dark:hover:bg-gray-800/30 transition-colors">
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-3">
-                                  <span className="font-extrabold text-gray-900 dark:text-white text-xl block">{trade.ticker}</span>
-                                  <span className="text-xs font-semibold bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 px-3 py-1 rounded-md border border-indigo-500/30 shadow-sm">{trade.signal}</span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 font-mono text-gray-500">{currency}{trade.entry}</td>
-                              <td className="px-6 py-4 font-mono font-bold text-gray-900 dark:text-white">{currency}{trade.currentPrice}</td>
-                              <td className="px-6 py-4 font-mono font-medium text-rose-500">{currency}{trade.stop}</td>
-                              <td className="px-6 py-4 font-mono font-medium text-emerald-500">{currency}{trade.target}</td>
-                              <td className="px-6 py-4 text-right">
-                                <span className={`inline-flex justify-center items-center gap-1 font-mono font-bold w-[90px] px-2 py-1 rounded border ${parseFloat(pnl) >= 0 ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
-                                  {parseFloat(pnl) >= 0 ? '+' : ''}{pnl}%
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      ) : (
-                        <tr>
-                          <td colSpan="6" className="px-6 py-16 text-center">
-                            <div className="flex flex-col items-center justify-center space-y-5">
-                                <div className="relative w-20 h-20 flex items-center justify-center">
-                                    <div className="absolute inset-0 rounded-full border-4 border-emerald-500/20"></div>
-                                    <div className="absolute inset-0 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin opacity-80"></div>
-                                    <div className="absolute inset-0 rounded-full border-4 border-transparent border-r-emerald-400 animate-[spin_1.5s_reverse_infinite] opacity-60"></div>
-                                    <Activity className="w-8 h-8 text-emerald-500 animate-pulse" />
-                                </div>
-                                <div>
-                                    <h4 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Yapay Zeka Motoru Devrede</h4>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto leading-relaxed">
-                                        Şu an aktif işlem bulunmuyor. Sistem arka planda tüm BIST evrenini gerçek zamanlı verilerle tarıyor. Güçlü bir kırılım geldiğinde otomatik olarak tespit edilip portföye eklenecektir.
-                                    </p>
-                                </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Geçmiş İşlemler */}
-              <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden shadow-lg opacity-90">
-                 <div className="p-5 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-950/50">
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-blue-500" />
-                    İşlem Geçmişi & Performans
-                  </h3>
-                  {currentPastSwingTrades.length > 0 && (() => {
-                    const wins = currentPastSwingTrades.filter(t => t.status === 'WIN').length;
-                    const losses = currentPastSwingTrades.filter(t => t.status === 'LOSS').length;
-                    const totalCompleted = wins + losses;
-                    const winRate = totalCompleted > 0 ? ((wins / totalCompleted) * 100).toFixed(0) : 0;
-                    return (
-                      <div className="flex flex-wrap gap-2 text-sm font-bold">
-                        <span className="px-3 py-1 bg-gray-800 rounded-md text-white">İşlem: {totalCompleted}</span>
-                        <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-md">Kâr: {wins}</span>
-                        <span className="px-3 py-1 bg-rose-500/20 text-rose-400 rounded-md">Zarar: {losses}</span>
-                        <span className="px-3 py-1 bg-indigo-500/20 text-indigo-400 rounded-md">Kazanma Oranı: %{winRate}</span>
-                      </div>
-                    );
-                  })()}
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                    <thead className="text-gray-700 dark:text-gray-500 bg-gray-100 dark:bg-gray-950/30 uppercase border-b border-gray-200 dark:border-gray-800">
-                      <tr>
-                        <th className="px-6 py-3 font-semibold">Sembol</th>
-                        <th className="px-6 py-3 font-semibold">Sonuç</th>
-                        <th className="px-6 py-3 font-semibold">Giriş / Çıkış Fiyatı</th>
-                        <th className="px-6 py-3 font-semibold">Kâr/Zarar</th>
-                        <th className="px-6 py-3 font-semibold text-right">Giriş / Çıkış Tarihi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-800">
-                      {(() => {
-                        const allSwingTrades = [...currentActiveSwingTrades, ...currentPastSwingTrades];
-                        if (allSwingTrades.length === 0) {
-                          return (
-                            <tr>
-                              <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
-                                Henüz bir işlem bulunmuyor.
-                              </td>
-                            </tr>
-                          );
-                        }
-                        
-                        return allSwingTrades.map((trade, i) => {
-                          const isOngoing = trade.status === 'BOUGHT' || !trade.exitPrice;
-                          let pnlDisplay = trade.pnlPercent;
-                          let pnlValue = parseFloat(trade.pnlPercent || 0);
-                          
-                          if (isOngoing && (trade.currentPrice || trade.price)) {
-                             const currentP = parseFloat(trade.currentPrice || trade.price);
-                             const entryP = parseFloat(trade.entry);
-                             if (entryP > 0) {
-                               pnlValue = ((currentP - entryP) / entryP) * 100;
-                               pnlDisplay = pnlValue.toFixed(2);
-                             }
-                          }
-                          
-                          return (
-                            <tr key={i} className="hover:bg-gray-100/40 dark:hover:bg-gray-800/30 transition-colors">
-                              <td className="px-6 py-3 font-bold text-gray-900 dark:text-gray-300">{trade.ticker}</td>
-                              <td className="px-6 py-3">
-                                {trade.status === 'WIN' ? (
-                                  <span className="text-emerald-500 flex items-center gap-1"><Target className="w-3 h-3"/> Hedefe Ulaştı</span>
-                                ) : trade.status === 'LOSS' ? (
-                                  <span className="text-rose-500 flex items-center gap-1"><ShieldAlert className="w-3 h-3"/> Stop Oldu</span>
-                                ) : (
-                                  <span className="text-blue-500 flex items-center gap-1"><Activity className="w-3 h-3"/> İşlem Görüyor</span>
-                                )}
-                              </td>
-                              <td className="px-6 py-3 font-mono text-gray-600 dark:text-gray-400">
-                                {currency}{trade.entry} ➔ {isOngoing ? `-` : `${currency}${trade.exitPrice}`}
-                              </td>
-                              <td className="px-6 py-3">
-                                 <span className={`font-mono font-bold ${trade.status === 'WIN' || pnlValue > 0 ? 'text-emerald-500' : trade.status === 'LOSS' || pnlValue < 0 ? 'text-rose-500' : 'text-blue-500'}`}>
-                                   {pnlValue > 0 ? '+' : ''}{pnlDisplay}%
-                                 </span>
-                              </td>
-                              <td className="px-6 py-3 text-right text-gray-500 text-xs font-mono">
-                                {(() => {
-                                  if (isOngoing) {
-                                    return trade.entryTime ? `Giriş: ${trade.entryTime}` : 'Devam Ediyor';
-                                  } else {
-                                    let durationText = '';
-                                    if (trade.entryDate && trade.exitDate) {
-                                       const diffMs = new Date(trade.exitDate) - new Date(trade.entryDate);
-                                       const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                                       const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                                       durationText = diffDays > 0 ? `(${diffDays} Gün)` : (diffHours > 0 ? `(${diffHours} Saat)` : `(<1 Saat)`);
-                                    }
-                                    return (
-                                      <div className="flex flex-col items-end gap-0.5">
-                                        <span>Giriş: {trade.entryTime || 'Bilinmiyor'}</span>
-                                        <span>Çıkış: {trade.exitTime} <strong className="text-gray-400">{durationText}</strong></span>
-                                      </div>
-                                    );
-                                  }
-                                })()}
-                              </td>
-                            </tr>
-                          );
-                        });
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              
-
-            </div>
-          )}
+              return (
+                <MomentumSwingTradeDashboard
+                  activeTrades={currentActiveSwingTrades}
+                  pastTrades={currentPastSwingTrades}
+                  isScanning={isScanning}
+                  lastUpdate={displayLastUpdate}
+                  marketMode={marketMode}
+                />
+              );
+          })()}
 
           {activeTab === 'analytics' && (
-             <AnalyticsDashboard historicalData={liveHistoricalData} dailyData={liveDailyData} />
+             <AnalyticsDashboard historicalData={liveHistoricalData} dailyData={liveDailyData} marketMode={marketMode} />
           )}
 
           {activeTab === 'wallet' && marketMode === 'ABD' && (
