@@ -18,11 +18,22 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow-x: hidden;
+  overscroll-behavior-y: none; /* disables Safari pull-to-refresh for app feel */
   user-select: none; /* Metin kopyalanmasını/seçilmesini engeller */
   -webkit-user-select: none;
+  -webkit-touch-callout: none; /* Disable long press on links/images */
   -moz-user-select: none;
   -ms-user-select: none;
   cursor: default; /* Yazı imleci (I-beam) çıkmasını engeller */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Recharts grafiklerine tıklanınca çıkan çizgili çerçeveyi (outline) gizler */
