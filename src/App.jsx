@@ -157,8 +157,10 @@ export default function BistAlgoPlatform() {
             activeSwingTradesRef.current = cloudData.activeSwingTrades;
         }
         if (cloudData.pastSwingTrades) {
-            setPastSwingTrades(cloudData.pastSwingTrades);
-            pastSwingTradesRef.current = cloudData.pastSwingTrades;
+            const filteredBist = cloudData.pastSwingTrades.filter(t => t.exitReason !== 'İşlem Görüyor');
+            setPastSwingTrades(filteredBist);
+            pastSwingTradesRef.current = filteredBist;
+            saveToFirebase('pastSwingTrades', filteredBist);
         }
         if (cloudData.lastScanDate) localStorage.setItem('lastScanDate', cloudData.lastScanDate);
         const fixedDateUS = '11 Ağustos 2026';
@@ -181,13 +183,24 @@ export default function BistAlgoPlatform() {
            setUsPortfolios(INITIAL_US_PORTFOLIOS);
            saveToFirebase('usPortfolios', INITIAL_US_PORTFOLIOS);
         }
-        if (cloudData.activeUsSwingTrades) {
-           setActiveUsSwingTrades(cloudData.activeUsSwingTrades);
-           activeUsSwingTradesRef.current = cloudData.activeUsSwingTrades;
-        }
-        if (cloudData.pastUsSwingTrades) {
-           setPastUsSwingTrades(cloudData.pastUsSwingTrades);
-           pastUsSwingTradesRef.current = cloudData.pastUsSwingTrades;
+        const forceResetUsSwingV1 = !localStorage.getItem('reset_us_swing_v3');
+        if (forceResetUsSwingV1) {
+            setActiveUsSwingTrades([]);
+            activeUsSwingTradesRef.current = [];
+            saveToFirebase('activeUsSwingTrades', []);
+            setPastUsSwingTrades([]);
+            pastUsSwingTradesRef.current = [];
+            saveToFirebase('pastUsSwingTrades', []);
+            localStorage.setItem('reset_us_swing_v3', 'true');
+        } else {
+            if (cloudData.activeUsSwingTrades) {
+               setActiveUsSwingTrades(cloudData.activeUsSwingTrades);
+               activeUsSwingTradesRef.current = cloudData.activeUsSwingTrades;
+            }
+            if (cloudData.pastUsSwingTrades) {
+               setPastUsSwingTrades(cloudData.pastUsSwingTrades);
+               pastUsSwingTradesRef.current = cloudData.pastUsSwingTrades;
+            }
         }
       } else {
         // Bulutta veri yoksa, ilk defaya mahsus varsayılanları (veya local'dekileri) buluta yaz
@@ -251,6 +264,7 @@ export default function BistAlgoPlatform() {
   };
 
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [lastUpdateUS, setLastUpdateUS] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [rebalanceProgress, setRebalanceProgress] = useState(0);
@@ -424,18 +438,6 @@ export default function BistAlgoPlatform() {
                               entryTime: nowObj.toLocaleDateString('tr-TR') + ' ' + nowObj.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
                               entryDate: nowObj.toISOString()
                           });
-                          historyEvents.push({
-                              ticker: signal.ticker,
-                              status: 'BOUGHT',
-                              exitReason: 'İşlem Görüyor',
-                              entry: signal.entry,
-                              exitPrice: signal.entry,
-                              pnlPercent: '0.00',
-                              entryTime: nowObj.toLocaleDateString('tr-TR') + ' ' + nowObj.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                              entryDate: nowObj.toISOString(),
-                              exitTime: nowObj.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                              exitDate: nowObj.toISOString()
-                          });
                       }
                   }
               }
@@ -481,6 +483,7 @@ export default function BistAlgoPlatform() {
     const isOpen = isActuallyOpen || (currentActive.length === 0 && !isOnlyActive);
 
     if (!isOpen) {
+      setLastUpdateUS('Piyasa Kapalı (Tarama Durduruldu)');
       return;
     }
 
@@ -529,21 +532,31 @@ export default function BistAlgoPlatform() {
           const atr = parseFloat(trade.atr) || (currentP * 0.04);
           const entryP = parseFloat(trade.entry);
 
-          // Momentum Sıkı İzleyen Stop: Sınırsız Kâr (Kârı Koru), %3 Başlangıç Stopu
+          // Momentum Sıkı İzleyen Stop: 4 Dolar kâr sonrası devreye girer
           if (!trade.highestPrice || currentP > parseFloat(trade.highestPrice)) {
               trade.highestPrice = currentP.toFixed(2);
           }
           const highestP = parseFloat(trade.highestPrice);
-          const profitPct = ((highestP - entryP) / entryP) * 100;
           
-          let trailingDistance;
-          if (profitPct >= 2.0) {
-              trailingDistance = highestP * 0.015;
+          // ABD kasası 1000 dolar ve 5 hisse kuralı ile her hisseye ortalama 200 dolar ayrılır.
+          const commissionPerTrade = 4; // 4 Dolar toplam komisyon
+          const positionSize = 1000 / 5; 
+          const lots = positionSize / entryP;
+          const currentProfitUSD = (highestP - entryP) * lots;
+          
+          let newStop;
+          const breakevenPrice = entryP + (commissionPerTrade / lots);
+          
+          if (currentProfitUSD > commissionPerTrade) {
+              // 4 dolar komisyonu kurtardıysa, stop seviyesi asla komisyonlu maliyetin altına düşürülmez.
+              const trailingDistance = highestP * 0.02; // %2 geriden takip et
+              const calculatedStop = highestP - trailingDistance;
+              newStop = Math.max(breakevenPrice, calculatedStop);
           } else {
-              trailingDistance = highestP * 0.03;
+              // Aksi halde %2 sabit zarar kes
+              newStop = entryP * 0.98;
           }
           
-          const newStop = highestP - trailingDistance;
           if (!trade.stop || newStop > parseFloat(trade.stop)) {
               trade.stop = newStop.toFixed(2);
           }
@@ -562,20 +575,27 @@ export default function BistAlgoPlatform() {
           }
           
           if (currentP <= stopP) {
-             const actualProfitPct = ((currentP - entryP) / entryP) * 100;
-             trade.exitReason = actualProfitPct > 0 ? 'İzleyen Stop (Kâr)' : 'Stop (Zarar Kes)';
+             const grossProfitUSD = (currentP - entryP) * lots;
+             const netProfitUSD = grossProfitUSD - commissionPerTrade;
+             const netProfitPct = (netProfitUSD / positionSize) * 100;
+             
+             trade.exitReason = netProfitUSD > 0 ? 'İzleyen Stop (Kâr)' : 'Stop (Zarar Kes)';
              trade.exitPrice = currentP.toFixed(2);
-             trade.pnlPercent = actualProfitPct.toFixed(2);
-             trade.status = actualProfitPct > 0 ? 'WIN' : 'LOSS';
+             trade.pnlPercent = netProfitPct.toFixed(2);
+             trade.status = netProfitUSD > 0 ? 'WIN' : 'LOSS';
              trade.exitTime = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
              trade.exitDate = new Date().toISOString();
              historyEventsUS.push(trade);
              updatedActiveTrades.splice(i, 1);
           } else if (isTimeStop) {
+             const grossProfitUSD = (currentP - entryP) * lots;
+             const netProfitUSD = grossProfitUSD - commissionPerTrade;
+             const netProfitPct = (netProfitUSD / positionSize) * 100;
+             
              trade.exitReason = 'Süre Sonu (Zaman Stopu)';
              trade.exitPrice = currentP.toFixed(2);
-             trade.pnlPercent = (((currentP - parseFloat(trade.entry)) / parseFloat(trade.entry)) * 100).toFixed(2);
-             trade.status = parseFloat(trade.pnlPercent) > 0 ? 'WIN' : 'LOSS';
+             trade.pnlPercent = netProfitPct.toFixed(2);
+             trade.status = netProfitUSD > 0 ? 'WIN' : 'LOSS';
              trade.exitTime = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
              trade.exitDate = new Date().toISOString();
              historyEventsUS.push(trade);
@@ -637,6 +657,7 @@ export default function BistAlgoPlatform() {
       }
       
       setActiveUsSwingTrades(updatedActiveTrades);
+      setLastUpdateUS(new Date().toLocaleTimeString('tr-TR'));
       
     } catch (error) {
       console.error("US Tarama hatası:", error);
@@ -1494,8 +1515,8 @@ export default function BistAlgoPlatform() {
               const day = now.getDay();
               const time = now.getHours() + (now.getMinutes() / 60);
               const isUsOpen = (day > 0 && day < 6) && (time >= 16.5 && time <= 23.0);
-              const displayLastUpdate = marketMode === 'ABD' && !isUsOpen 
-                  ? 'ABD Piyasası Kapalı (Tarama Durduruldu)' 
+              const displayLastUpdate = marketMode === 'ABD'
+                  ? (!isUsOpen ? 'Piyasa Kapalı (Tarama Durduruldu)' : lastUpdateUS)
                   : lastUpdate;
 
               return (

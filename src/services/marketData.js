@@ -371,10 +371,12 @@ export const fetchExplosiveUSStocks = async () => {
       body: JSON.stringify({
         filter: [
           { left: "type", operation: "in_range", right: ["stock"] },
-          { left: "close", operation: "egreater", right: 1 },
-          { left: "close", operation: "eless", right: 30 },
+          { left: "close", operation: "egreater", right: 5 },
+          { left: "close", operation: "eless", right: 150 },
           { left: "volume", operation: "egreater", right: 1000000 },
-          { left: "change", operation: "egreater", right: 5 } // En az %5 günlük yükseliş
+          { left: "change", operation: "egreater", right: 1 },
+          { left: "change", operation: "eless", right: 5 },
+          { left: "RSI", operation: "in_range", right: [45, 65] }
         ],
         options: { lang: "en" },
         markets: ["america"],
@@ -382,7 +384,7 @@ export const fetchExplosiveUSStocks = async () => {
         columns: [
           'name', 'close', 'volume', 'average_volume_30d_calc', 'Perf.W', 'Volatility.D', 
           'RSI', 'MACD.macd', 'MACD.signal', 'EMA20', 'EMA50', 'ATR', 'open', 'high', 'low', 
-          'change'
+          'change', 'EMA200'
         ],
         sort: { sortBy: "relative_volume_10d_calc", sortOrder: "desc" },
         range: [0, 50]
@@ -401,7 +403,9 @@ export const fetchExplosiveUSStocks = async () => {
             rsi: d[6], macd: d[7], macdSignal: d[8], ema20: d[9], ema50: d[10],
             atr: d[11] || (d[1] * 0.05),
             open: d[12], high: d[13], low: d[14],
-            change: d[15] !== undefined ? d[15] : null, currentPrice: d[1]
+            change: d[15] !== undefined ? d[15] : null,
+            ema200: d[16] !== undefined ? d[16] : null,
+            currentPrice: d[1]
           };
         });
       }
@@ -431,7 +435,7 @@ export const fetchTVDataForUSStocks = async (tickers) => {
           columns: [
             'close', 'volume', 'average_volume_30d_calc', 'Perf.W', 'Volatility.D', 
             'RSI', 'MACD.macd', 'MACD.signal', 'EMA20', 'EMA50', 'ATR', 'open', 'high', 'low', 
-            'price_earnings_ttm', 'return_on_equity', 'price_book_ratio', 'change'
+            'price_earnings_ttm', 'return_on_equity', 'price_book_ratio', 'change', 'EMA200'
           ]
         })
       });
@@ -448,7 +452,9 @@ export const fetchTVDataForUSStocks = async (tickers) => {
                 rsi: d[5], macd: d[6], macdSignal: d[7], ema20: d[8], ema50: d[9],
                 atr: d[10] || (d[0] * 0.04), // US market slightly more volatile
                 open: d[11], high: d[12], low: d[13], pe: d[14] || null, roe: d[15] || null, pb: d[16] || null,
-                change: d[17] !== undefined ? d[17] : null, currentPrice: d[0]
+                change: d[17] !== undefined ? d[17] : null,
+                ema200: d[18] !== undefined ? d[18] : null,
+                currentPrice: d[0]
               };
             }
           });
@@ -464,57 +470,52 @@ export const fetchTVDataForUSStocks = async (tickers) => {
 
 export const analyzeUSStock = (data) => {
   if (!data || !data.close) return null;
-  const { ticker, close, rsi, macd, macdSignal, ema20, ema50, atr, volume, avgVol30 } = data;
+  const { ticker, close, rsi, macd, macdSignal, ema20, ema50, ema200, atr, volume, avgVol30 } = data;
   const signals = [];
 
-  const hasVolumeSurge = avgVol30 && volume > (avgVol30 * 1.5); // US Needs bigger volume shocks
+  const hasVolumeSurge = avgVol30 && volume > (avgVol30 * 1.2); // Sıkışma sonrası %20 artış yeterli
 
-  // Trend Filtresi
-  const isTrendOk = (ema20 && close > ema20) || (macd !== null && macdSignal !== null && macd > macdSignal);
+  // VCP (Volatility Contraction Pattern) / Pullback (Geri Çekilme) Kriterleri
+  const isLongTermUptrend = ema50 && ema200 && close > ema50 && ema50 > ema200;
+  
+  // Fiyat EMA20'ye çok yakın olmalı (Maksimum %4 yukarısında, ideal destek dönüşü)
+  const isNearEma20 = ema20 && close > ema20 && close < (ema20 * 1.04);
 
-  // RSI Divergence / Oversold
-  if (rsi < 35 && isTrendOk) {
-      signals.push({ type: 'İndikatör', signal: 'RSI Aşırı Satım (US)', strength: 'Al' });
-  }
+  // MACD momentumu pozitif ivmeleniyor olmalı
+  const isMacdImproving = macd !== null && macdSignal !== null && macd > macdSignal;
 
-  // EMA Golden Cross or Trend Continuation
-  if (ema20 && ema50 && ema20 > ema50 && close > ema20) {
-      signals.push({ type: 'Trend', signal: 'EMA20 Yükseliş Trendi', strength: 'İzleme' });
-  }
-
-  // MACD Momentum
-  if (macd !== null && macdSignal !== null && macd > macdSignal && macd < 0) {
-      signals.push({ type: 'İndikatör', signal: 'MACD Dipten Dönüş', strength: 'Al' });
-  }
-
-  let finalSignals = [];
-  // Dinamik patlayıcı taramadan gelen hisselerde Hacim ve Trend varsa doğrudan Güçlü Al ver
-  if (hasVolumeSurge && isTrendOk && data.change > 2) {
-      signals.push({ type: 'Momentum', signal: 'Patlayıcı Momentum Hacmi (US)', strength: 'Güçlü Al' });
-  }
-
-  for (const s of signals) {
-      if ((s.strength === 'Al' || s.strength === 'Güçlü Al') && hasVolumeSurge) {
-          finalSignals.push({ ...s, strength: 'Güçlü Al', signal: s.signal.includes('Hacim') ? s.signal : s.signal + ' + Hacim Şoku' });
-      } else if (s.strength === 'Al' || s.strength === 'Güçlü Al') {
-          finalSignals.push(s);
+  if (isLongTermUptrend && isNearEma20 && hasVolumeSurge) {
+      if (isMacdImproving) {
+          signals.push({ type: 'VCP Kırılımı', signal: 'EMA20 Desteği + Hacim (US)', strength: 'Güçlü Al' });
+      } else {
+          signals.push({ type: 'Pullback', signal: 'EMA20 Desteğinde Hacimli Dönüş', strength: 'Al' });
       }
   }
-  
-  finalSignals = finalSignals.filter(s => s.strength === 'Güçlü Al' || s.strength === 'Al');
+
+  let finalSignals = signals.filter(s => s.strength === 'Güçlü Al' || s.strength === 'Al');
 
   if (finalSignals.length > 0) {
     finalSignals.sort((a, b) => b.strength.localeCompare(a.strength));
     const entryPrice = close;
     
-    // ABD piyasasında maksimum Zarar Kes limiti (%8)
-    const maxStopPct = 0.08;
-    let stopPrice = entryPrice - (atr * 4.0); // 4x ATR initial stop due to high volatility
+    // ABD piyasasında maksimum Zarar Kes limiti (%4 - VCP mantığı gereği dar stop)
+    const maxStopPct = 0.04;
+    
+    // Stop seviyesi EMA20'nin %1 altına konulur
+    let stopPrice = ema20 * 0.99; 
+    
+    // Eğer EMA20 stobu çok yakınsa (%1'den azsa) en az %1.5 stop bırak
+    if (stopPrice > entryPrice * 0.985) {
+        stopPrice = entryPrice * 0.985;
+    }
+    
+    // Eğer EMA20 stobu %4'ten uzaksa maksimum %4 stop uygula
     if (stopPrice < entryPrice * (1 - maxStopPct)) {
         stopPrice = entryPrice * (1 - maxStopPct);
     }
-    // 1-2 haftalık hedefler (daha yakın realizasyon)
-    const targetPrice = entryPrice + (atr * 6); // 1:2 R:R
+    
+    // 1:3 Risk Reward Oranı (Dar stop olduğu için hedefler yüksek tutulabilir)
+    const targetPrice = entryPrice + ((entryPrice - stopPrice) * 3); 
 
     return {
       ticker,
@@ -528,8 +529,8 @@ export const analyzeUSStock = (data) => {
       strength: finalSignals[0].strength,
       id: Math.random().toString(36).substring(2, 9),
       time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-      indicators: { rsi: rsi ? rsi.toFixed(1) : '-', macd: macd ? macd.toFixed(2) : '-', ema20Status: (ema20 && close > ema20) ? 'Üzerinde' : 'Altında' },
-      rr: '1:2'
+      indicators: { rsi: rsi ? rsi.toFixed(1) : '-', macd: macd ? macd.toFixed(2) : '-', ema20Status: 'Desteğinde' },
+      rr: '1:3'
     };
   }
   return null;
@@ -588,19 +589,25 @@ export const scoreUSStock = (data, strategy) => {
   }
 
   // ==========================================
-  // 3. İVME VE MOMENTUM
+  // 3. İVME VE MOMENTUM (VCP / PULLBACK SKORU)
   // ==========================================
-  const hasVolumeSurge = avgVol30 > 0 && volume > (avgVol30 * 1.5);
+  const hasVolumeSurge = avgVol30 > 0 && volume > (avgVol30 * 1.2);
   const isMacdBullish = macd !== null && macdSignal !== null && macd > macdSignal;
+  const isNearEma20 = ema20 && close > ema20 && close < (ema20 * 1.04);
   
+  if (isNearEma20) {
+      score += 40;
+      reasons.push('VCP / EMA20 Desteğine Yakın');
+  }
+
+  if (hasVolumeSurge) {
+      score += 20;
+      reasons.push('Hacim Şoku');
+  }
+
   if (isMacdBullish) {
       score += 15;
       reasons.push('MACD Pozitif İvme');
-  }
-
-  if (hasVolumeSurge && perfW > 0) {
-      score += 25;
-      reasons.push('Kurumsal Hacim Desteği');
   }
 
   // ==========================================

@@ -145,12 +145,37 @@ export default function MomentumSwingTradeDashboard({ activeTrades, pastTrades, 
                 const losses = pastTrades.filter(t => t.status === 'LOSS' && parseFloat(t.pnlPercent) <= 0).length;
                 const total = wins + losses;
                 const winRate = total > 0 ? ((wins / total) * 100).toFixed(0) : 0;
+                
+                const isUSD = marketMode === 'ABD';
+                const swingCapital = isUSD ? 1000 : 2000;
+                const positionSize = swingCapital / 5;
+                
+                let totalNetCash = 0;
+                pastTrades.forEach(t => {
+                   const pnl = parseFloat(t.pnlPercent) || 0;
+                   totalNetCash += positionSize * (pnl / 100);
+                });
+                const totalNetPct = (totalNetCash / swingCapital) * 100;
+                
                 return (
-                  <div className="flex flex-wrap gap-2 text-xs font-bold">
-                    <span className="px-2.5 py-1 bg-gray-200 dark:bg-gray-800 rounded-md text-gray-700 dark:text-gray-300">İşlem: {total}</span>
-                    <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-md">Kâr: {wins}</span>
-                    <span className="px-2.5 py-1 bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-md">Zarar: {losses}</span>
-                    <span className="px-2.5 py-1 bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-md">Win Rate: %{winRate}</span>
+                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-4">
+                    <div className={`flex items-center gap-3 px-4 py-2 rounded-xl border shadow-sm ${totalNetCash >= 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-rose-500/10 border-rose-500/30'}`}>
+                       <span className={`text-sm font-bold uppercase tracking-wider ${totalNetCash >= 0 ? 'text-emerald-600 dark:text-emerald-500' : 'text-rose-600 dark:text-rose-500'}`}>
+                           Kazanç:
+                       </span>
+                       <span className={`text-xl font-black font-mono ${totalNetCash >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                           {totalNetCash >= 0 ? '+' : ''}{currency}{totalNetCash.toLocaleString('tr-TR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                       </span>
+                       <span className={`text-base font-bold ${totalNetPct >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                           ({totalNetPct >= 0 ? '+' : ''}%{totalNetPct.toFixed(2)})
+                       </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs font-bold">
+                      <span className="px-2.5 py-1 bg-gray-200 dark:bg-gray-800 rounded-md text-gray-700 dark:text-gray-300">İşlem: {total}</span>
+                      <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-md">Kâr: {wins}</span>
+                      <span className="px-2.5 py-1 bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-md">Zarar: {losses}</span>
+                      <span className="px-2.5 py-1 bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-md">Win Rate: %{winRate}</span>
+                    </div>
                   </div>
                 );
              })()}
@@ -176,8 +201,11 @@ export default function MomentumSwingTradeDashboard({ activeTrades, pastTrades, 
                 )}
                 {pastTrades && pastTrades.slice(0, 15).map((trade, i) => (
                   <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                    <td className="px-4 py-3 text-gray-500">
-                       {trade.exitDate ? new Date(trade.exitDate).toLocaleDateString('tr-TR') : trade.exitTime}
+                    <td className="px-4 py-3 text-xs text-gray-500 font-medium">
+                       <div className="flex flex-col gap-0.5 whitespace-nowrap">
+                           <span><span className="text-gray-400">G:</span> {trade.entryTime || (trade.entryDate ? new Date(trade.entryDate).toLocaleString('tr-TR') : '-')}</span>
+                           <span><span className="text-gray-400">Ç:</span> {trade.exitDate ? new Date(trade.exitDate).toLocaleDateString('tr-TR') + ' ' + (trade.exitTime || '') : trade.exitTime || '-'}</span>
+                       </div>
                     </td>
                     <td className="px-4 py-3 font-mono font-semibold text-gray-900 dark:text-gray-200">{trade.ticker}</td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400 font-mono">

@@ -34,7 +34,7 @@ const WalletDashboard = ({ portfolios, activeSwingTrades, pastSwingTrades, marke
   const isUSD = marketMode === 'ABD';
   const currency = isUSD ? '$' : '₺';
   const MONTHLY_CAPITAL = isUSD ? 2000 : 100000;
-  const SWING_CAPITAL = isUSD ? 100 : 2000;
+  const SWING_CAPITAL = isUSD ? 1000 : 2000;
 
   const realizedSwingProfit = useMemo(() => {
       if (!pastSwingTrades || pastSwingTrades.length === 0) return 0;
@@ -72,12 +72,15 @@ const WalletDashboard = ({ portfolios, activeSwingTrades, pastSwingTrades, marke
           
           if (lots > 0) {
               const cost = lots * entry;
-              const value = lots * current;
-              const profit = value - cost;
+              let value = lots * current;
+              
+              // 4 dolar komisyonu hesaba kat
+              const commission = isUSD ? 4 : 0;
+              const profit = value - cost - commission;
               const profitPct = cost > 0 ? (profit / cost) * 100 : 0;
               
               totalCost += cost;
-              currentValue += value;
+              currentValue += value - commission; // Portföy değerinden komisyonu düşerek yansıt
 
               list.push({ ticker: trade.ticker, lots, cost, value, profit });
               chart.push({ name: trade.ticker, value, profit, profitPct: parseFloat(profitPct.toFixed(1)) });
