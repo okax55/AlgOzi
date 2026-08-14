@@ -240,8 +240,8 @@ export default function USSwingTradeDashboard() {
                       <td className="px-6 py-4 font-mono font-medium text-rose-500">{trade.stop}</td>
                       <td className="px-6 py-4 font-mono font-medium text-emerald-500">{trade.target}</td>
                       <td className="px-6 py-4 text-right">
-                        <span className={`inline-flex justify-center items-center gap-1 font-mono font-bold w-[90px] px-2 py-1 rounded border ${parseFloat(pnl) >= 0 ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
-                          {parseFloat(pnl) >= 0 ? '+' : ''}{pnl}%
+                        <span className={`inline-flex justify-center items-center gap-1 font-mono font-bold w-[90px] px-2 py-1 rounded border ${parseFloat(pnl) > 0 ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : parseFloat(pnl) < 0 ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : 'bg-blue-500/10 text-blue-500 border-blue-500/20'}`}>
+                          {parseFloat(pnl) > 0 ? '+' : ''}{pnl}%
                         </span>
                       </td>
                     </tr>
@@ -304,8 +304,8 @@ export default function USSwingTradeDashboard() {
                     </td>
                     <td className="px-6 py-3 font-mono text-gray-600 dark:text-gray-400">{trade.entry} ➔ {trade.exitPrice}</td>
                     <td className="px-6 py-3">
-                       <span className={`font-mono font-bold ${trade.status === 'WIN' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                         {trade.status === 'WIN' ? '+' : ''}{trade.pnlPercent}%
+                       <span className={`font-mono font-bold ${parseFloat(trade.pnlPercent) > 0 ? 'text-emerald-500' : parseFloat(trade.pnlPercent) < 0 ? 'text-rose-500' : 'text-blue-500'}`}>
+                         {parseFloat(trade.pnlPercent) > 0 ? '+' : ''}{trade.pnlPercent}%
                        </span>
                     </td>
                     <td className="px-6 py-3 text-right text-gray-500">{trade.exitTime}</td>

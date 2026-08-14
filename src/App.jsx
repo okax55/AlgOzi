@@ -197,7 +197,13 @@ export default function BistAlgoPlatform() {
                setActiveUsSwingTrades(cloudData.activeUsSwingTrades);
                activeUsSwingTradesRef.current = cloudData.activeUsSwingTrades;
             }
-            if (cloudData.pastUsSwingTrades) {
+            const forceResetUsSwingPastV1 = !localStorage.getItem('reset_us_swing_past_v1');
+            if (forceResetUsSwingPastV1) {
+                setPastUsSwingTrades([]);
+                pastUsSwingTradesRef.current = [];
+                saveToFirebase('pastUsSwingTrades', []);
+                localStorage.setItem('reset_us_swing_past_v1', 'true');
+            } else if (cloudData.pastUsSwingTrades) {
                setPastUsSwingTrades(cloudData.pastUsSwingTrades);
                pastUsSwingTradesRef.current = cloudData.pastUsSwingTrades;
             }
@@ -546,14 +552,20 @@ export default function BistAlgoPlatform() {
           
           let newStop;
           const breakevenPrice = entryP + (commissionPerTrade / lots);
+          const targetNetProfitUSD = 4; // 4 Dolar net kâr hedefi
+          const targetGrossProfitUSD = commissionPerTrade + targetNetProfitUSD; // 8 Dolar brüt
+          const fourDollarNetPrice = entryP + (targetGrossProfitUSD / lots); // 4 Dolar net kâr getiren fiyat
           
-          if (currentProfitUSD > commissionPerTrade) {
-              // 4 dolar komisyonu kurtardıysa, stop seviyesi asla komisyonlu maliyetin altına düşürülmez.
-              const trailingDistance = highestP * 0.02; // %2 geriden takip et
+          if (currentProfitUSD >= targetGrossProfitUSD) {
+              // 4 dolar net kâra ulaştıysa, izleyen stop devreye girer. Stop seviyesi asla 4 dolar net kârın (başlangıç hedefinin) altına düşürülmez.
+              const trailingDistance = highestP * 0.02; // Zirveden %2 geriden takip et
               const calculatedStop = highestP - trailingDistance;
-              newStop = Math.max(breakevenPrice, calculatedStop);
+              newStop = Math.max(fourDollarNetPrice, calculatedStop);
+          } else if (currentProfitUSD > commissionPerTrade) {
+              // Sadece komisyonu kurtardıysa, stop seviyesini başa baş noktasına çek (zarar etmemek için)
+              newStop = breakevenPrice;
           } else {
-              // Aksi halde %2 sabit zarar kes
+              // Harekete geçmediyse %2 sabit zarar kes
               newStop = entryP * 0.98;
           }
           
@@ -562,7 +574,8 @@ export default function BistAlgoPlatform() {
           }
           const stopP = parseFloat(trade.stop);
           
-          trade.target = (entryP * 2.0).toFixed(2);
+          // Hedef (Kâr Al): 4 Dolar Net Kâr getiren fiyat
+          trade.target = fourDollarNetPrice.toFixed(2);
           
           let isTimeStop = false;
           if (trade.entryDate) {
@@ -786,7 +799,7 @@ export default function BistAlgoPlatform() {
             if (data.change !== null && data.change !== undefined) {
                dailyRet = data.change.toFixed(2);
             }
-            if (parseFloat(ret) < -15) {
+            if (parseFloat(ret) < -5) {
                 return { ...stock, price: currentPrice.toFixed(2), return: ret, status: "ZARAR KES", isLocked: true };
             }
             return { ...stock, price: currentPrice.toFixed(2), return: ret, dailyReturn: dailyRet };
@@ -1470,10 +1483,10 @@ export default function BistAlgoPlatform() {
                                 <td className="px-5 py-4">
                                   <span className={`inline-flex items-center px-2 py-1 rounded-md text-sm font-medium border ${
                                     stock.status === 'YENİ' 
-                                      ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' 
+                                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' 
                                       : stock.status === 'ZARAR KES'
                                         ? 'bg-rose-500/10 text-rose-500 border-rose-500/20 font-bold'
-                                        : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                        : 'bg-blue-500/10 text-blue-500 border-blue-500/20'
                                   }`}>{stock.status}</span>
                                 </td>
                                 <td className="px-5 py-4 text-right">

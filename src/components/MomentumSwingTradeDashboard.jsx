@@ -104,8 +104,8 @@ export default function MomentumSwingTradeDashboard({ activeTrades, pastTrades, 
                       <td className="px-6 py-4 font-mono font-medium text-rose-500">{currency}{trade.stop}</td>
                       <td className="px-6 py-4 font-mono font-medium text-emerald-500">{currency}{trade.target}</td>
                       <td className="px-6 py-4 text-right">
-                        <span className={`inline-flex justify-center items-center gap-1 font-mono font-bold w-[90px] px-2 py-1 rounded border ${parseFloat(pnl) >= 0 ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
-                          {parseFloat(pnl) >= 0 ? '+' : ''}{pnl}%
+                        <span className={`inline-flex justify-center items-center gap-1 font-mono font-bold w-[90px] px-2 py-1 rounded border ${parseFloat(pnl) > 0 ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : parseFloat(pnl) < 0 ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : 'bg-blue-500/10 text-blue-500 border-blue-500/20'}`}>
+                          {parseFloat(pnl) > 0 ? '+' : ''}{pnl}%
                         </span>
                       </td>
                     </tr>
@@ -228,7 +228,7 @@ export default function MomentumSwingTradeDashboard({ activeTrades, pastTrades, 
                       })()}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <span className={`font-mono font-bold ${parseFloat(trade.pnlPercent) > 0 ? 'text-emerald-500' : parseFloat(trade.pnlPercent) < 0 ? 'text-rose-500' : 'text-gray-500'}`}>
+                      <span className={`font-mono font-bold ${parseFloat(trade.pnlPercent) > 0 ? 'text-emerald-500' : parseFloat(trade.pnlPercent) < 0 ? 'text-rose-500' : 'text-blue-500'}`}>
                          {parseFloat(trade.pnlPercent) > 0 ? '+' : ''}{trade.pnlPercent}%
                       </span>
                     </td>
