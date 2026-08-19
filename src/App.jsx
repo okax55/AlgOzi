@@ -946,14 +946,31 @@ export default function BistAlgoPlatform() {
 
     // Bütçe ve Lot hesaplaması (Her portföy 100.000 TL)
     const TARGET_CAPITAL = 100000;
-    const targetPerStock = TARGET_CAPITAL / (selected.length || 1);
+    
+    // Ters Volatilite veya Eşit Ağırlık hesaplaması
+    let totalInvVol = 0;
+    selected.forEach(s => {
+        const data = tvDataMap[s.ticker];
+        s.volatility = (data && data.volatility) ? data.volatility : 0.02; // Fallback
+        s.invVol = 1 / s.volatility;
+        totalInvVol += s.invVol;
+    });
 
     selected = selected.map(s => {
+        let weightPct = 0;
+        if (strategyKey === 'delta') {
+            weightPct = 1 / (selected.length || 1); // Equal weight for Delta
+        } else {
+            weightPct = totalInvVol > 0 ? (s.invVol / totalInvVol) : (1 / (selected.length || 1)); // Inverse Vol for others
+        }
+        
+        const allocatedCapital = TARGET_CAPITAL * weightPct;
         const cPrice = safeFloat(s.costPrice);
         let lots = 0;
         let weight = "0.00";
+        
         if (cPrice > 0) {
-            lots = Math.floor(targetPerStock / cPrice);
+            lots = Math.floor(allocatedCapital / cPrice);
             weight = (((lots * cPrice) / TARGET_CAPITAL) * 100).toFixed(2);
         }
         return { ...s, weight, lots };
@@ -1017,14 +1034,31 @@ export default function BistAlgoPlatform() {
     }
 
     const TARGET_CAPITAL = 10000;
-    const targetPerStock = TARGET_CAPITAL / (selected.length || 1);
+    
+    // Ters Volatilite veya Eşit Ağırlık hesaplaması
+    let totalInvVol = 0;
+    selected.forEach(s => {
+        const data = tvDataMap[s.ticker];
+        s.volatility = (data && data.volatility) ? data.volatility : 0.02; // Fallback
+        s.invVol = 1 / s.volatility;
+        totalInvVol += s.invVol;
+    });
 
     selected = selected.map(s => {
+        let weightPct = 0;
+        if (strategyKey === 'delta') {
+            weightPct = 1 / (selected.length || 1); // Equal weight for Delta
+        } else {
+            weightPct = totalInvVol > 0 ? (s.invVol / totalInvVol) : (1 / (selected.length || 1)); // Inverse Vol for others
+        }
+        
+        const allocatedCapital = TARGET_CAPITAL * weightPct;
         const cPrice = safeFloat(s.costPrice);
         let lots = 0;
         let weight = "0.00";
+        
         if (cPrice > 0) {
-            lots = Math.floor(targetPerStock / cPrice);
+            lots = Math.floor(allocatedCapital / cPrice);
             weight = (((lots * cPrice) / TARGET_CAPITAL) * 100).toFixed(2);
         }
         return { ...s, weight, lots };

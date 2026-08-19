@@ -65,7 +65,15 @@ export const fetchTVDataForStocks = async (tickers) => {
             'price_earnings_ttm',
             'return_on_equity',
             'price_book_ratio',
-            'change'
+            'change',
+            'sector',
+            'net_debt_ebitda',
+            'cash_n_short_term_invest',
+            'net_income',
+            'price_earnings_growth_ttm',
+            'VWAP',
+            'revenue_growth_qoq',
+            'ChaikinMoneyFlow'
           ]
         })
       });
@@ -96,6 +104,14 @@ export const fetchTVDataForStocks = async (tickers) => {
               roe: d[15] || null,
               pb: d[16] || null,
               change: d[17] !== undefined ? d[17] : null,
+              sector: d[18] || 'Genel',
+              netDebtEbitda: d[19] !== undefined ? d[19] : null,
+              operatingCashFlow: d[20] !== undefined ? d[20] : null,
+              netIncome: d[21] !== undefined ? d[21] : null,
+              peg: d[22] !== undefined ? d[22] : null,
+              vwap: d[23] !== undefined ? d[23] : null,
+              revenueGrowth: d[24] !== undefined ? d[24] : null,
+              cmf: d[25] !== undefined ? d[25] : null,
               currentPrice: d[0]
             };
           });
@@ -108,6 +124,39 @@ export const fetchTVDataForStocks = async (tickers) => {
     // Small delay between chunks to be polite to the API
     await delay(200);
   }
+
+  // Calculate Sector Stats for Z-Scores
+  const sectorGroups = {};
+  Object.values(results).forEach(stock => {
+      const s = stock.sector;
+      if (!sectorGroups[s]) sectorGroups[s] = { pe: [], roe: [], pb: [] };
+      if (stock.pe !== null && stock.pe > 0) sectorGroups[s].pe.push(stock.pe);
+      if (stock.roe !== null) sectorGroups[s].roe.push(stock.roe);
+      if (stock.pb !== null && stock.pb > 0) sectorGroups[s].pb.push(stock.pb);
+  });
+
+  const getStats = (arr) => {
+      if (arr.length === 0) return { mean: 0, std: 1 };
+      const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+      const variance = arr.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / arr.length;
+      const std = Math.sqrt(variance) || 1; 
+      return { mean, std };
+  };
+
+  const sectorStats = {};
+  Object.keys(sectorGroups).forEach(s => {
+      sectorStats[s] = {
+          pe: getStats(sectorGroups[s].pe),
+          roe: getStats(sectorGroups[s].roe),
+          pb: getStats(sectorGroups[s].pb)
+      };
+  });
+
+  // Attach sector stats to each stock
+  Object.keys(results).forEach(ticker => {
+      results[ticker].sectorStats = sectorStats[results[ticker].sector];
+  });
+
   return results;
 };
 
@@ -234,9 +283,9 @@ export const analyzeStock = (data) => {
 export const scoreStock = (data, strategy) => {
   if (!data || !data.close) return { score: 0, reason: 'Veri Yetersiz' };
 
-  const { close, volume, avgVol30, perfW, volatility, rsi, macd, macdSignal, sma20, sma50, pe, roe, pb, open, high, low } = data;
+  const { close, volume, avgVol30, perfW, volatility, rsi, macd, macdSignal, sma20, sma50, pe, roe, pb, open, high, low, sectorStats, netDebtEbitda, operatingCashFlow, netIncome, peg, vwap, revenueGrowth, cmf } = data;
   
-  let score = 0;
+  let score = 50; // Base score
   let reasons = [];
 
   // ==========================================
@@ -246,10 +295,8 @@ export const scoreStock = (data, strategy) => {
   if (close < currentSma) {
       return { score: 0, reason: 'Düşüş Trendi (SMA50 Altı)' };
   }
-
   
   if (strategy !== 'beta') {
-      // Beta (Halka arz / Yeni büyüme) haricinde zarar edenleri at
       if (pe === null || pe < 0 || pe > 30) {
           return { score: 0, reason: `F/K Oranı Uygunsuz (${pe})` };
       }
@@ -257,93 +304,131 @@ export const scoreStock = (data, strategy) => {
           return { score: 0, reason: 'Özkaynak Kârlılığı Negatif' };
       }
   } else {
-      // Beta için F/K null (Yeni halka arz) olabilir ama zarar kesinlikle yasak
       if (pe !== null && pe < 0) {
           return { score: 0, reason: 'Zarar Eden Şirket' };
       }
   }
 
-  // RSI FİLTRESİ
-  if (rsi) {
-      if (rsi > 75) {
-          score -= 30;
-          reasons.push('Aşırı Alım (RSI > 75)');
-      } else if (rsi >= 40 && rsi <= 70) {
+  // ==========================================
+  // 2. TEMEL ANALİZ (Z-SKORU & YENİ FİLTRELER)
+  // ==========================================
+  const calcZScore = (val, stats) => {
+      if (val === null || !stats || stats.std === 0) return 0;
+      return (val - stats.mean) / stats.std;
+  };
+
+  // PE: Düşük olması iyi, bu yüzden negatif Z skoru artı puan getirir
+  if (pe && sectorStats && sectorStats.pe) {
+      const zPe = calcZScore(pe, sectorStats.pe);
+      score -= (zPe * 10); // Ortalama altıysa (ucuzsa) puan artar
+      if (zPe < -1) reasons.push('Sektörüne Göre Ucuz (F/K)');
+  }
+
+  // ROE: Yüksek olması iyi
+  if (roe && sectorStats && sectorStats.roe) {
+      const zRoe = calcZScore(roe, sectorStats.roe);
+      score += (zRoe * 15);
+      if (zRoe > 1) reasons.push('Sektörüne Göre Kârlı (ROE)');
+  }
+
+  // Yeni Filtreler
+  if (netDebtEbitda !== null) {
+      if (netDebtEbitda > 4) {
+          score -= 20;
+          reasons.push('Yüksek Borçluluk (Net Borç/FAVÖK)');
+      } else if (netDebtEbitda < 1) {
           score += 10;
-          reasons.push('Sağlıklı Yükseliş Trendi (RSI)');
+      }
+  }
+
+  // Nakit Akışı / Net Kâr
+  if (operatingCashFlow !== null && netIncome !== null && netIncome > 0) {
+      const ocfRatio = operatingCashFlow / netIncome;
+      if (ocfRatio > 1) {
+          score += 15;
+          reasons.push('Güçlü Nakit Akışı');
+      } else if (ocfRatio < 0.5) {
+          score -= 15;
+          reasons.push('Kağıt Üstü Kâr (Düşük Nakit)');
+      }
+  }
+
+  // PEG
+  if (peg !== null) {
+      if (peg > 0 && peg < 1) {
+          score += 15;
+          reasons.push('Büyümeye Göre Ucuz (PEG < 1)');
       }
   }
 
   // ==========================================
-  // 2. KALİTE (QUALITY) & BİLANÇO SKORU
-  // ==========================================
-  if (roe && roe >= 20) {
-      score += 25;
-      reasons.push('Yüksek ROE (Kârlı Büyüme)');
-      if (roe > 40) score += 15; // Süper kârlı şirketlere ekstra prim
-  }
-
-  if (pe && pe > 0 && pe <= 15) {
-      score += 20;
-      reasons.push('Ucuz Değerleme (F/K)');
-  }
-
-  // ==========================================
-  // 3. İVME VE MOMENTUM (Yüksek Getiri Avcısı)
+  // 3. İVME VE MOMENTUM
   // ==========================================
   const hasVolumeSurge = avgVol30 > 0 && volume > (avgVol30 * 1.5);
-  const isMacdBullish = macd !== null && macdSignal !== null && macd > macdSignal;
   
-  if (isMacdBullish) {
-      score += 15;
-      reasons.push('MACD Pozitif İvme');
+  if (rsi) {
+      const zRsi = (rsi - 50) / 10; // Simple Z-score logic for RSI centered at 50
+      if (rsi > 75) {
+          score -= 20; // Aşırı alım cezası
+      } else {
+          score += (zRsi * 5); // 50-70 arası tatlı ivme puanı
+      }
   }
 
-  // Sadece düşmüyor diye değil, "Yukarı Patlama" yapma ihtimali olanları (Volatilitesi yukarı yönlü olanları) yakala.
   if (hasVolumeSurge && perfW > 0) {
-      score += 25; // Hacimli Yükseliş - Yüzde 100 potansiyeli taşıyan hareketler
-      reasons.push('Hacimli Yükseliş Trendi');
+      score += 15;
+      reasons.push('Hacimli Yükseliş');
   }
 
   // ==========================================
-  // 4. STRATEJİYE ÖZEL ÇARPANLAR (Kati Kurallar)
+  // 4. STRATEJİYE ÖZEL ÇARPANLAR
   // ==========================================
   switch (strategy) {
     case 'alfa':
-      // ALFA (Yüksek Volatilite & Roket): Volatilite şartı aranır ve Hacimli Ralli gerekir.
-      if (!hasVolumeSurge || perfW < 2 || volatility < 0.03) {
-          score -= 40; // İvme veya volatilite yoksa Alfa'ya giremez
+      // ALFA: VWAP üzerinde kapanış (Bull Trap engeli)
+      if (vwap !== null && close < vwap) {
+          score -= 40; // Gün içi satıcı baskısı
+      } else if (!hasVolumeSurge || perfW < 2 || volatility < 0.03) {
+          score -= 40;
       } else {
           score += 25; 
-          if (perfW > 5) score += 15; 
+          reasons.push('Güçlü İvme (VWAP Onaylı)');
       }
       break;
     case 'beta':
-      // BETA (Yeni Halka Arz ve Değer Kazanımı): F/K null olabilir, ama haftalık getiri çok yüksek olmalı
-      if (perfW < 5) {
-          score -= 50; // Değer kazanımı (hızlı yükseliş) yoksa Beta'dan at
+      // BETA: Yeni Halka Arz ve Büyüme (Satış Büyümesi > %30)
+      if (revenueGrowth !== null && revenueGrowth > 30) {
+          score += 30;
+          reasons.push('Hızlı Satış Büyümesi');
+      } else if (perfW < 5) {
+          score -= 40;
       } else {
-          score += 25; 
-          if (pe === null) score += 15; // Halka arz varsayımı (P/E oluşmamış)
+          score += 15; 
       }
       break;
     case 'katilim':
-      // KATILIM (Katılım Endeksi Uyumu / Defansif): Aşırı dalgalanma yasak, kârlı ve PD/DD düşük olmalı
-      if (volatility > 0.03 || pb > 3 || pe > 20) {
-          score -= 50; // Spekülatif, pahalı veya yüksek dalgalıysa Katılım olamaz
+      // KATILIM: Defansif, Sektörel PD/DD kontrolü
+      let isPbCheap = pb < 3; // Fallback
+      if (pb && sectorStats && sectorStats.pb) {
+          isPbCheap = pb < sectorStats.pb.mean;
+      }
+      if (volatility > 0.03 || !isPbCheap || pe > 20) {
+          score -= 50; 
       } else {
-          score += 20;
-          if (pe > 0 && pe < 15) score += 15; 
+          score += 25;
+          reasons.push('Sektöre Göre Ucuz PD/DD');
       }
       break;
     case 'delta':
-      // DELTA (BIST100 Liderleri): Yüksek TL hacmi (Ana tahta) ve MACD AL sinyali
+      // DELTA: BIST100, Hacimli, CMF > 0
       const volumeInTL = avgVol30 * close;
-      if (volumeInTL < 50000000 || !isMacdBullish) { // Sığ hisseleri (50 Milyon TL altı) ele
+      if (volumeInTL < 50000000) { 
           score -= 50; 
+      } else if (cmf !== null && cmf < 0) {
+          score -= 30; // Para çıkışı var
       } else {
-          score += 20;
-          if (perfW > 0) score += 15;
+          score += 25;
+          if (cmf !== null && cmf > 0) reasons.push('Kurumsal Para Girişi (CMF)');
       }
       break;
     default:
@@ -353,7 +438,7 @@ export const scoreStock = (data, strategy) => {
   if (reasons.length === 0) reasons.push('Standart Puanlama');
 
   return {
-    score: Math.min(Math.round(score), 100), // Max 100 puan
+    score: Math.max(0, Math.min(Math.round(score), 100)), // 0-100 arasına kelepçele
     reason: reasons.join(' + ')
   };
 };
