@@ -13,7 +13,7 @@
       "destination": "https://www.tefas.gov.tr/:match*"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/).*)",
       "destination": "/index.html"
     }
   ]

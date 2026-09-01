@@ -9,7 +9,7 @@
       "destination": "https://scanner.tradingview.com/:match*"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/).*)",
       "destination": "/index.html"
     }
   ]
