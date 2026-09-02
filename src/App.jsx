@@ -135,22 +135,11 @@ export default function BistAlgoPlatform() {
           }
 
           let missingLots = false;
-          let needsPatch = false;
           Object.keys(mergedPortfolios).forEach(key => {
             if (mergedPortfolios[key] && Array.isArray(mergedPortfolios[key])) {
               mergedPortfolios[key] = mergedPortfolios[key].map(stock => {
                 let currentStock = { ...stock };
                 
-                // Eylül 2026 devreden hisse hatası için yama (Sadece bir kere çalışır)
-                if (currentStock.isLocked && currentStock.status === 'ZARAR KES') {
-                    console.log(`[AlgOzi Yama] ${currentStock.ticker} için hatalı zarar kes kaldırıldı ve maliyet sıfırlandı.`);
-                    currentStock.isLocked = false;
-                    currentStock.status = 'TUT';
-                    currentStock.costPrice = currentStock.price;
-                    currentStock.return = "0.00";
-                    needsPatch = true;
-                }
-
                 if (currentStock.lots === undefined || currentStock.lots === 0) {
                   missingLots = true;
                   const initialStock = INITIAL_PORTFOLIOS[key]?.find(s => s.ticker === currentStock.ticker);
@@ -161,7 +150,7 @@ export default function BistAlgoPlatform() {
             }
           });
           setPortfolios(mergedPortfolios);
-          if (missingLots || isBistEmpty || needsPatch) {
+          if (missingLots || isBistEmpty) {
              saveToFirebase('portfolios', mergedPortfolios);
              localStorage.setItem('portfolios_v5', JSON.stringify(mergedPortfolios));
           }
