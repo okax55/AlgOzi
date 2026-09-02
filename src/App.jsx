@@ -135,21 +135,35 @@ export default function BistAlgoPlatform() {
           }
 
           let missingLots = false;
+          let needsPatch = false;
           Object.keys(mergedPortfolios).forEach(key => {
             if (mergedPortfolios[key] && Array.isArray(mergedPortfolios[key])) {
               mergedPortfolios[key] = mergedPortfolios[key].map(stock => {
-                if (stock.lots === undefined || stock.lots === 0) {
-                  missingLots = true;
-                  const initialStock = INITIAL_PORTFOLIOS[key]?.find(s => s.ticker === stock.ticker);
-                  return { ...stock, lots: initialStock ? initialStock.lots : 0 };
+                let currentStock = { ...stock };
+                
+                // Eylül 2026 devreden hisse hatası için yama (Sadece bir kere çalışır)
+                if (currentStock.isLocked && currentStock.status === 'ZARAR KES') {
+                    console.log(`[AlgOzi Yama] ${currentStock.ticker} için hatalı zarar kes kaldırıldı ve maliyet sıfırlandı.`);
+                    currentStock.isLocked = false;
+                    currentStock.status = 'TUT';
+                    currentStock.costPrice = currentStock.price;
+                    currentStock.return = "0.00";
+                    needsPatch = true;
                 }
-                return stock;
+
+                if (currentStock.lots === undefined || currentStock.lots === 0) {
+                  missingLots = true;
+                  const initialStock = INITIAL_PORTFOLIOS[key]?.find(s => s.ticker === currentStock.ticker);
+                  currentStock.lots = initialStock ? initialStock.lots : 0;
+                }
+                return currentStock;
               });
             }
           });
           setPortfolios(mergedPortfolios);
-          if (missingLots || isBistEmpty) {
+          if (missingLots || isBistEmpty || needsPatch) {
              saveToFirebase('portfolios', mergedPortfolios);
+             localStorage.setItem('portfolios_v5', JSON.stringify(mergedPortfolios));
           }
         }
         if (cloudData.activeSwingTrades) {
@@ -874,12 +888,9 @@ export default function BistAlgoPlatform() {
             const evaluation = scoreStock(data, strategyKey);
             if (evaluation.score > 30) {
                 const currentPrice = data.currentPrice;
-                const costPrice = p.costPrice ? parseFloat(p.costPrice) : currentPrice;
-                let rawRet = ((currentPrice - costPrice) / costPrice) * 100;
-                let ret = rawRet.toFixed(2);
-                if (currentPrice > costPrice && ret === "0.00") ret = "0.01";
-                if (currentPrice < costPrice && (ret === "-0.00" || ret === "0.00")) ret = "-0.01";
-                if (currentPrice === costPrice) ret = "0.00";
+                const costPrice = currentPrice; // Yeni ay için maliyeti sıfırla
+                let rawRet = 0;
+                let ret = "0.00";
                 
                 let dailyRet = "0.00";
                 if (data.change !== null && data.change !== undefined) {
@@ -988,8 +999,8 @@ export default function BistAlgoPlatform() {
             const evaluation = scoreUSStock(data, strategyKey);
             if (evaluation.score > 30) {
                 const currentPrice = data.currentPrice;
-                const costPrice = p.costPrice ? parseFloat(p.costPrice) : currentPrice;
-                const ret = (((currentPrice - costPrice) / costPrice) * 100).toFixed(2);
+                const costPrice = currentPrice; // Yeni ay için maliyeti sıfırla
+                const ret = "0.00";
                 let dailyRet = "0.00";
                 if (data.change !== null && data.change !== undefined) {
                    dailyRet = data.change.toFixed(2);
