@@ -116,21 +116,13 @@ export default function BistAlgoPlatform() {
         if (cloudData.portfolios) {
           let mergedPortfolios = { ...cloudData.portfolios };
           
-          // EĞER BULUTTAKİ PORTFÖYLER BOŞALMIŞSA (HATA SONUCU) VEYA BUGÜN YANLIŞLIKLA TARANDIYSA BAŞLANGIÇ VERİLERİNİ (6 AĞUSTOS) GERİ YÜKLE
+          // EĞER BULUTTAKİ PORTFÖYLER BOŞALMIŞSA (HATA SONUCU) BAŞLANGIÇ VERİLERİNİ GERİ YÜKLE
           const isBistEmpty = Object.values(mergedPortfolios).every(p => !p || p.length === 0);
-          const forceRestoreFinal = !localStorage.getItem('restore_aug6_final_v3');
           
-          if (isBistEmpty || forceRestoreFinal) {
+          if (isBistEmpty) {
               mergedPortfolios = INITIAL_PORTFOLIOS;
-              localStorage.setItem('restore_aug6_final_v3', 'true');
               
-              // Tarihi de zorla 6 Ağustos'a çekelim ve formatlayalım
-              const fixedDate = '06 Ağustos 2026';
-              localStorage.setItem('lastScanDate', fixedDate);
-              saveToFirebase('lastScanDate', fixedDate);
-              if (cloudData) cloudData.lastScanDate = fixedDate;
-              
-              // Veritabanını hemen güncelleyelim ki diğer siteler de (localhost vb.) düzelsin
+              // Veritabanını hemen güncelleyelim
               saveToFirebase('portfolios', INITIAL_PORTFOLIOS);
           }
 
@@ -174,13 +166,7 @@ export default function BistAlgoPlatform() {
             saveToFirebase('lastScanDateUS', fixedDateUS);
         }
         
-        const forceResetUsFinal = !localStorage.getItem('restore_aug6_us_final_v4');
-        if (forceResetUsFinal) {
-           console.log("HARD RESETTING US PORTFOLIOS");
-           setUsPortfolios(INITIAL_US_PORTFOLIOS);
-           saveToFirebase('usPortfolios', INITIAL_US_PORTFOLIOS);
-           localStorage.setItem('restore_aug6_us_final_v4', 'true');
-        } else if (cloudData.usPortfolios && cloudData.usPortfolios.alfa && cloudData.usPortfolios.alfa.length > 0) {
+        if (cloudData.usPortfolios && cloudData.usPortfolios.alfa && cloudData.usPortfolios.alfa.length > 0) {
            setUsPortfolios(cloudData.usPortfolios);
         } else {
            setUsPortfolios(INITIAL_US_PORTFOLIOS);
